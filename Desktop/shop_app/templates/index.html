@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品管理アプリ</title>
+</head>
+<body>
+    <h1>商品管理アプリ</h1>
+    <!-- 商品を追加するフォーム -->
+    <form id="add-product-form">
+        <input type="text" name="name" placeholder="商品名" required>
+        <input type="number" name="price" placeholder="価格" required>
+        <button type="submit">商品を追加</button>
+    </form>
+
+    <h2>商品リスト</h2>
+    <ul id="product-list"></ul> <!-- 商品リスト表示 -->
+
+    <h2>カート</h2>
+    <!-- ユーザーと商品数量をカートに追加するフォーム -->
+    <form id="add-to-cart-form">
+        <input type="text" name="user" placeholder="ユーザー名" required>
+        <input type="text" name="item" placeholder="商品名" required>
+        <input type="number" name="quantity" placeholder="数量" required>
+        <button type="submit">カートに追加</button>
+    </form>
+
+    <h2>合計金額</h2>
+    <button id="calculate-total-btn">合計金額を計算</button>
+    <div id="total"></div> <!-- 合計金額表示 -->
+
+    <script>
+        // 商品の追加
+        document.getElementById("add-product-form").addEventListener("submit", async (e) => {
+            e.preventDefault();  // フォーム送信時にページがリロードされないようにする
+            const formData = new FormData(e.target);
+            await fetch("/add_product", { method: "POST", body: formData });
+            alert("商品が追加されました！");
+        });
+
+        // 合計金額の計算
+        document.getElementById("calculate-total-btn").addEventListener("click", async () => {
+            const user = prompt("ユーザー名を入力してください:");  // ユーザー名を入力
+            const response = await fetch(`/calculate_total/${user}`);  // 合計金額を計算するAPIを呼び出す
+            const data = await response.json();
+            document.getElementById("total").innerText = `合計金額: ¥${data.total}`;  // 合計金額を表示
+        });
+    </script>
+</body>
+</html>
