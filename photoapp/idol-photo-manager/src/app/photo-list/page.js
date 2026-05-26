@@ -417,8 +417,8 @@ export default function PhotoListPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-white px-4 py-5">
-      <div className="w-full max-w-md md:max-w-4xl lg:max-w-6xl mx-auto">
+    <main className="min-h-screen bg-black text-white px-4 py-5 overflow-x-hidden">
+      <div className="w-full max-w-md md:max-w-4xl lg:max-w-6xl mx-auto min-w-0">
         <Link
           href={`/select?group=${encodeURIComponent(group)}`}
           className="text-cyan-400 text-sm"
@@ -465,7 +465,9 @@ export default function PhotoListPage() {
             </div>
           ) : (
             <>
-              <h1 className="text-3xl md:text-4xl font-bold leading-tight">{title}</h1>
+              <h1 className="text-2xl md:text-4xl font-bold leading-tight break-words min-w-0">
+                {title}
+              </h1>
 
               <p className="text-zinc-400 mt-2">
                 {totalCount}枚所持
@@ -475,10 +477,8 @@ export default function PhotoListPage() {
           )}
         </div>
 
-        <div className="flex items-start justify-between mb-5 gap-3">
-          <div></div>
-
-          <div className="flex gap-3 items-start">
+        <div className="flex items-start justify-end mb-5 gap-3 overflow-x-auto pb-1">
+          <div className="flex gap-3 items-start shrink-0">
             <select
               value={sortType}
               onChange={(e) => setSortType(e.target.value)}
@@ -536,7 +536,7 @@ export default function PhotoListPage() {
                     <Link
                       key={item.key}
                       href={makeDetailUrl(item)}
-                      className="block bg-zinc-900 border border-zinc-700 rounded-3xl p-3"
+                      className="block bg-zinc-900 border border-zinc-700 rounded-3xl p-3 min-w-0 overflow-hidden"
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
@@ -555,17 +555,17 @@ export default function PhotoListPage() {
 
                       <div className="grid gap-3">
                         {imageRows.map((row, rowIndex) => (
-                          <div key={rowIndex} className="grid grid-cols-4 gap-2">
+                          <div key={rowIndex} className="grid grid-cols-4 gap-1 sm:gap-2 min-w-0">
                             {row.map((slot, slotIndex) => (
-                              <div key={`${slot.pose}-${slotIndex}`}>
+                              <div key={`${slot.pose}-${slotIndex}`} className="min-w-0">
                                 {slot.photo?.image ? (
                                   <img
                                     src={slot.photo.image}
                                     alt={`${item.title}-${slot.pose}`}
-                                    className="w-full aspect-[3/4] object-contain bg-zinc-800 rounded-xl p-1"
+                                    className="w-full aspect-[3/4] object-contain bg-zinc-800 rounded-lg sm:rounded-xl p-0.5 sm:p-1"
                                   />
                                 ) : (
-                                  <div className="w-full aspect-[3/4] bg-zinc-800 rounded-xl flex items-center justify-center text-zinc-500 text-[10px] text-center px-1">
+                                  <div className="w-full aspect-[3/4] bg-zinc-800 rounded-lg sm:rounded-xl flex items-center justify-center text-zinc-500 text-[9px] sm:text-[10px] text-center px-0.5">
                                     No Image
                                   </div>
                                 )}

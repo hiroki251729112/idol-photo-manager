@@ -21,6 +21,8 @@ export default function SelectPage() {
   const [typeSort, setTypeSort] = useState("created_desc");
   const [memberSort, setMemberSort] = useState("default");
 
+  const typeThumbnailPriority = ["チュウ", "ヨリ", "座りヨリ", "ヒキ", "座り"];
+
   const getPhotoKey = (photo) => {
     return [
       photo.group || "",
@@ -242,6 +244,26 @@ export default function SelectPage() {
     );
   }, [filteredByGroup]);
 
+  const getTypeThumbnailImage = (photoList) => {
+    for (const pose of typeThumbnailPriority) {
+      const matchedPhoto = photoList.find(
+        (photo) => photo.pose === pose && photo.image
+      );
+
+      if (matchedPhoto?.image) return matchedPhoto.image;
+    }
+
+    const otherPhoto = photoList.find(
+      (photo) => !typeThumbnailPriority.includes(photo.pose) && photo.image
+    );
+
+    if (otherPhoto?.image) return otherPhoto.image;
+
+    const anyPhoto = photoList.find((photo) => photo.image);
+
+    return anyPhoto?.image || "";
+  };
+
   const typeItems = useMemo(() => {
     const filtered =
       yearFilter === "すべて"
@@ -257,10 +279,11 @@ export default function SelectPage() {
         typeMap.set(key, {
           year: photo.year,
           type: photo.type,
-          image: photo.image || "",
+          image: "",
           totalCount: 0,
           latestId: Number(photo.id || 0),
           oldestId: Number(photo.id || 0),
+          photos: [],
         });
       }
 
@@ -269,13 +292,13 @@ export default function SelectPage() {
       item.totalCount += Number(photo.count || 0);
       item.latestId = Math.max(item.latestId, Number(photo.id || 0));
       item.oldestId = Math.min(item.oldestId, Number(photo.id || 0));
-
-      if (!item.image && photo.image) {
-        item.image = photo.image;
-      }
+      item.photos.push(photo);
     });
 
-    const items = [...typeMap.values()];
+    const items = [...typeMap.values()].map((item) => ({
+      ...item,
+      image: getTypeThumbnailImage(item.photos),
+    }));
 
     switch (typeSort) {
       case "created_asc":
