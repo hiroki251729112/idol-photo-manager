@@ -439,10 +439,15 @@ export default function PhotoAddPage() {
     setCropImageSize({ width: 0, height: 0 });
     setCropBox({ left: 5, top: 5, right: 95, bottom: 95 });
 
+    const editorId =
+      kind === "normal"
+        ? `photo-add-crop-editor-normal-${pose}`
+        : `photo-add-crop-editor-other-${index}`;
+
     setTimeout(() => {
       document
-        .getElementById("photo-add-crop-editor")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        .getElementById(editorId)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 100);
   };
 
@@ -592,6 +597,144 @@ export default function PhotoAddPage() {
     setCropTarget(null);
     setCropImageSize({ width: 0, height: 0 });
     setCropBox({ left: 5, top: 5, right: 95, bottom: 95 });
+  };
+
+  const isCropEditorForNormalPose = (pose) => {
+    return cropTarget?.kind === "normal" && cropTarget?.pose === pose;
+  };
+
+  const isCropEditorForOtherPose = (index) => {
+    return cropTarget?.kind === "other" && cropTarget?.index === index;
+  };
+
+  const renderCropEditor = (editorId) => {
+    if (!cropTarget) return null;
+
+    return (
+      <div
+        id={editorId}
+        className="bg-zinc-950 border border-cyan-500 rounded-3xl p-4 mt-3"
+      >
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-lg font-bold">画像調整</h2>
+            <p className="text-sm text-zinc-400 mt-1 leading-6">
+              水色の枠線をドラッグして、保存したい範囲を調整してください。
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCancelCrop}
+            className="text-zinc-400 text-sm shrink-0"
+          >
+            閉じる
+          </button>
+        </div>
+
+        <div
+          ref={cropAreaRef}
+          className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800"
+        >
+          <img
+            src={cropTarget.sourceImage}
+            alt="調整中の画像"
+            onLoad={(e) =>
+              setCropImageSize({
+                width: e.target.naturalWidth,
+                height: e.target.naturalHeight,
+              })
+            }
+            className="w-full block"
+            draggable={false}
+          />
+
+          <div
+            className="absolute border-[4px] border-cyan-400 pointer-events-none"
+            style={{
+              left: `${cropBox.left}%`,
+              top: `${cropBox.top}%`,
+              width: `${cropBox.right - cropBox.left}%`,
+              height: `${cropBox.bottom - cropBox.top}%`,
+            }}
+          />
+
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              setDragTarget("left");
+            }}
+            className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent"
+            style={{ left: `${cropBox.left}%` }}
+          />
+
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              setDragTarget("right");
+            }}
+            className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent"
+            style={{ left: `${cropBox.right}%` }}
+          />
+
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              setDragTarget("top");
+            }}
+            className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent"
+            style={{ top: `${cropBox.top}%` }}
+          />
+
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              setDragTarget("bottom");
+            }}
+            className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent"
+            style={{ top: `${cropBox.bottom}%` }}
+          />
+        </div>
+
+        {cropImageSize.width > 0 && cropImageSize.height > 0 && (
+          <p className="text-xs text-zinc-500 mt-2">
+            元画像サイズ：{cropImageSize.width} × {cropImageSize.height}
+          </p>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 mt-4">
+          <button
+            type="button"
+            onClick={() =>
+              setCropBox({ left: 5, top: 5, right: 95, bottom: 95 })
+            }
+            className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+          >
+            枠をリセット
+          </button>
+
+          <button
+            type="button"
+            onClick={handleApplyCrop}
+            className="bg-cyan-500 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+          >
+            この範囲で切り出す
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleUseOriginalImage}
+          className="w-full bg-white text-black border border-white rounded-2xl py-3 font-bold mt-3 active:scale-[0.98] transition"
+        >
+          調整せず元画像を使う
+        </button>
+      </div>
+    );
   };
 
   const handleSave = async () => {
@@ -781,130 +924,6 @@ export default function PhotoAddPage() {
           まとめて画像追加
         </Link>
 
-        {cropTarget && (
-          <div
-            id="photo-add-crop-editor"
-            className="bg-zinc-900 border border-cyan-500 rounded-3xl p-4 mb-6"
-          >
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <h2 className="text-xl font-bold">画像調整</h2>
-                <p className="text-sm text-zinc-400 mt-1 leading-6">
-                  水色の枠線をドラッグして、保存したい範囲を調整してください。
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleCancelCrop}
-                className="text-zinc-400 text-sm shrink-0"
-              >
-                閉じる
-              </button>
-            </div>
-
-            <div
-              ref={cropAreaRef}
-              className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800"
-            >
-              <img
-                src={cropTarget.sourceImage}
-                alt="調整中の画像"
-                onLoad={(e) =>
-                  setCropImageSize({
-                    width: e.target.naturalWidth,
-                    height: e.target.naturalHeight,
-                  })
-                }
-                className="w-full block"
-                draggable={false}
-              />
-
-              <div
-                className="absolute border-[4px] border-cyan-400 pointer-events-none"
-                style={{
-                  left: `${cropBox.left}%`,
-                  top: `${cropBox.top}%`,
-                  width: `${cropBox.right - cropBox.left}%`,
-                  height: `${cropBox.bottom - cropBox.top}%`,
-                }}
-              />
-
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  setDragTarget("left");
-                }}
-                className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent"
-                style={{ left: `${cropBox.left}%` }}
-              />
-
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  setDragTarget("right");
-                }}
-                className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent"
-                style={{ left: `${cropBox.right}%` }}
-              />
-
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  setDragTarget("top");
-                }}
-                className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent"
-                style={{ top: `${cropBox.top}%` }}
-              />
-
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  setDragTarget("bottom");
-                }}
-                className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent"
-                style={{ top: `${cropBox.bottom}%` }}
-              />
-            </div>
-
-            {cropImageSize.width > 0 && cropImageSize.height > 0 && (
-              <p className="text-xs text-zinc-500 mt-2">
-                元画像サイズ：{cropImageSize.width} × {cropImageSize.height}
-              </p>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              <button
-                type="button"
-                onClick={() => setCropBox({ left: 5, top: 5, right: 95, bottom: 95 })}
-                className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-2xl py-3 font-bold active:scale-[0.98] transition"
-              >
-                枠をリセット
-              </button>
-
-              <button
-                type="button"
-                onClick={handleApplyCrop}
-                className="bg-cyan-500 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
-              >
-                この範囲で切り出す
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleUseOriginalImage}
-              className="w-full bg-zinc-950 border border-zinc-700 text-zinc-300 rounded-2xl py-3 font-bold mt-3 active:scale-[0.98] transition"
-            >
-              調整せず元画像を使う
-            </button>
-          </div>
-        )}
-
         <form className="grid gap-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -1053,6 +1072,9 @@ export default function PhotoAddPage() {
                     className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm"
                   />
 
+                  {isCropEditorForNormalPose(pose) &&
+                    renderCropEditor(`photo-add-crop-editor-normal-${pose}`)}
+
                   {poseImages[pose] && (
                     <img
                       src={poseImages[pose]}
@@ -1098,6 +1120,9 @@ export default function PhotoAddPage() {
                       onChange={(e) => handleOtherPoseImageChange(index, e)}
                       className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm"
                     />
+
+                    {isCropEditorForOtherPose(index) &&
+                      renderCropEditor(`photo-add-crop-editor-other-${index}`)}
 
                     {otherPose.image && (
                       <img
