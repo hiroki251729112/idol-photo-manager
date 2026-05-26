@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -52,6 +52,7 @@ function CountSelector({ value, onChange }) {
 
 export default function PhotoAddPage() {
   const router = useRouter();
+  const cropAreaRef = useRef(null);
 
   const [user, setUser] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -80,6 +81,11 @@ export default function PhotoAddPage() {
   const [otherPoses, setOtherPoses] = useState([
     { name: "", count: "", image: "" },
   ]);
+
+  const [cropTarget, setCropTarget] = useState(null);
+  const [cropImageSize, setCropImageSize] = useState({ width: 0, height: 0 });
+  const [cropBox, setCropBox] = useState({ left: 5, top: 5, right: 95, bottom: 95 });
+  const [dragTarget, setDragTarget] = useState(null);
 
   const generationOptions = [
     "1期生",
@@ -120,6 +126,64 @@ export default function PhotoAddPage() {
 
     return ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
   }, [completeType]);
+
+  useEffect(() => {
+    if (!dragTarget) return;
+
+    const handlePointerMove = (event) => {
+      const rect = cropAreaRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const xPercent = Math.max(
+        0,
+        Math.min(100, ((event.clientX - rect.left) / rect.width) * 100)
+      );
+      const yPercent = Math.max(
+        0,
+        Math.min(100, ((event.clientY - rect.top) / rect.height) * 100)
+      );
+
+      if (dragTarget === "left") {
+        setCropBox((prev) => ({
+          ...prev,
+          left: Math.min(xPercent, prev.right - 2),
+        }));
+      }
+
+      if (dragTarget === "right") {
+        setCropBox((prev) => ({
+          ...prev,
+          right: Math.max(xPercent, prev.left + 2),
+        }));
+      }
+
+      if (dragTarget === "top") {
+        setCropBox((prev) => ({
+          ...prev,
+          top: Math.min(yPercent, prev.bottom - 2),
+        }));
+      }
+
+      if (dragTarget === "bottom") {
+        setCropBox((prev) => ({
+          ...prev,
+          bottom: Math.max(yPercent, prev.top + 2),
+        }));
+      }
+    };
+
+    const handlePointerUp = () => {
+      setDragTarget(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [dragTarget]);
 
   const getGenerationSortValue = (value) => {
     if (!value) return 9999;
@@ -365,6 +429,23 @@ export default function PhotoAddPage() {
     }));
   };
 
+  const openCropEditor = ({ kind, pose, index, sourceImage }) => {
+    setCropTarget({
+      kind,
+      pose,
+      index,
+      sourceImage,
+    });
+    setCropImageSize({ width: 0, height: 0 });
+    setCropBox({ left: 5, top: 5, right: 95, bottom: 95 });
+
+    setTimeout(() => {
+      document
+        .getElementById("photo-add-crop-editor")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  };
+
   const handlePoseImageChange = (pose, e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -372,13 +453,16 @@ export default function PhotoAddPage() {
     const reader = new FileReader();
 
     reader.onloadend = () => {
-      setPoseImages((prev) => ({
-        ...prev,
-        [pose]: reader.result,
-      }));
+      openCropEditor({
+        kind: "normal",
+        pose,
+        index: null,
+        sourceImage: reader.result,
+      });
     };
 
     reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   const handleOtherPoseChange = (index, field, value) => {
@@ -408,10 +492,106 @@ export default function PhotoAddPage() {
     const reader = new FileReader();
 
     reader.onloadend = () => {
-      handleOtherPoseChange(index, "image", reader.result);
+      openCropEditor({
+        kind: "other",
+        pose: "その他",
+        index,
+        sourceImage: reader.result,
+      });
     };
 
     reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const createCroppedImage = () => {
+    return new Promise((resolve, reject) => {
+      if (!cropTarget?.sourceImage) {
+        reject(new Error("切り出し対象の画像がありません"));
+        return;
+      }
+
+      const img = new Image();
+      img.src = cropTarget.sourceImage;
+
+      img.onload = () => {
+        const sx = Math.round((cropBox.left / 100) * img.naturalWidth);
+        const sy = Math.round((cropBox.top / 100) * img.naturalHeight);
+        const sw = Math.round(((cropBox.right - cropBox.left) / 100) * img.naturalWidth);
+        const sh = Math.round(((cropBox.bottom - cropBox.top) / 100) * img.naturalHeight);
+
+        const safeWidth = Math.max(1, Math.min(sw, img.naturalWidth - sx));
+        const safeHeight = Math.max(1, Math.min(sh, img.naturalHeight - sy));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = safeWidth;
+        canvas.height = safeHeight;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(
+          img,
+          sx,
+          sy,
+          safeWidth,
+          safeHeight,
+          0,
+          0,
+          safeWidth,
+          safeHeight
+        );
+
+        resolve(canvas.toDataURL("image/jpeg", 0.92));
+      };
+
+      img.onerror = () => {
+        reject(new Error("画像の読み込みに失敗しました"));
+      };
+    });
+  };
+
+  const handleApplyCrop = async () => {
+    try {
+      const croppedImage = await createCroppedImage();
+
+      if (cropTarget.kind === "normal") {
+        setPoseImages((prev) => ({
+          ...prev,
+          [cropTarget.pose]: croppedImage,
+        }));
+      }
+
+      if (cropTarget.kind === "other") {
+        handleOtherPoseChange(cropTarget.index, "image", croppedImage);
+      }
+
+      setCropTarget(null);
+    } catch (error) {
+      console.error(error);
+      alert("画像の切り出しに失敗しました");
+    }
+  };
+
+  const handleUseOriginalImage = () => {
+    if (!cropTarget?.sourceImage) return;
+
+    if (cropTarget.kind === "normal") {
+      setPoseImages((prev) => ({
+        ...prev,
+        [cropTarget.pose]: cropTarget.sourceImage,
+      }));
+    }
+
+    if (cropTarget.kind === "other") {
+      handleOtherPoseChange(cropTarget.index, "image", cropTarget.sourceImage);
+    }
+
+    setCropTarget(null);
+  };
+
+  const handleCancelCrop = () => {
+    setCropTarget(null);
+    setCropImageSize({ width: 0, height: 0 });
+    setCropBox({ left: 5, top: 5, right: 95, bottom: 95 });
   };
 
   const handleSave = async () => {
@@ -600,6 +780,130 @@ export default function PhotoAddPage() {
         >
           まとめて画像追加
         </Link>
+
+        {cropTarget && (
+          <div
+            id="photo-add-crop-editor"
+            className="bg-zinc-900 border border-cyan-500 rounded-3xl p-4 mb-6"
+          >
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h2 className="text-xl font-bold">画像調整</h2>
+                <p className="text-sm text-zinc-400 mt-1 leading-6">
+                  水色の枠線をドラッグして、保存したい範囲を調整してください。
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCancelCrop}
+                className="text-zinc-400 text-sm shrink-0"
+              >
+                閉じる
+              </button>
+            </div>
+
+            <div
+              ref={cropAreaRef}
+              className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800"
+            >
+              <img
+                src={cropTarget.sourceImage}
+                alt="調整中の画像"
+                onLoad={(e) =>
+                  setCropImageSize({
+                    width: e.target.naturalWidth,
+                    height: e.target.naturalHeight,
+                  })
+                }
+                className="w-full block"
+                draggable={false}
+              />
+
+              <div
+                className="absolute border-[4px] border-cyan-400 pointer-events-none"
+                style={{
+                  left: `${cropBox.left}%`,
+                  top: `${cropBox.top}%`,
+                  width: `${cropBox.right - cropBox.left}%`,
+                  height: `${cropBox.bottom - cropBox.top}%`,
+                }}
+              />
+
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setDragTarget("left");
+                }}
+                className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent"
+                style={{ left: `${cropBox.left}%` }}
+              />
+
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setDragTarget("right");
+                }}
+                className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent"
+                style={{ left: `${cropBox.right}%` }}
+              />
+
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setDragTarget("top");
+                }}
+                className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent"
+                style={{ top: `${cropBox.top}%` }}
+              />
+
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setDragTarget("bottom");
+                }}
+                className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent"
+                style={{ top: `${cropBox.bottom}%` }}
+              />
+            </div>
+
+            {cropImageSize.width > 0 && cropImageSize.height > 0 && (
+              <p className="text-xs text-zinc-500 mt-2">
+                元画像サイズ：{cropImageSize.width} × {cropImageSize.height}
+              </p>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => setCropBox({ left: 5, top: 5, right: 95, bottom: 95 })}
+                className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+              >
+                枠をリセット
+              </button>
+
+              <button
+                type="button"
+                onClick={handleApplyCrop}
+                className="bg-cyan-500 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+              >
+                この範囲で切り出す
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleUseOriginalImage}
+              className="w-full bg-zinc-950 border border-zinc-700 text-zinc-300 rounded-2xl py-3 font-bold mt-3 active:scale-[0.98] transition"
+            >
+              調整せず元画像を使う
+            </button>
+          </div>
+        )}
 
         <form className="grid gap-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
