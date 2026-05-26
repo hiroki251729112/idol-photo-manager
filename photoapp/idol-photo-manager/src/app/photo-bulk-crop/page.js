@@ -636,7 +636,26 @@ export default function PhotoBulkCropPage() {
     };
   };
 
-  const handleSave = async () => {
+  const resetSelectedItemsAfterContinuousSave = (savedIds) => {
+    setCroppedItems((prev) =>
+      prev.map((item) =>
+        savedIds.includes(item.id)
+          ? {
+              ...item,
+              selected: false,
+              pose: "",
+              customPose: "",
+              count: "1",
+            }
+          : item
+      )
+    );
+
+    const nextItem = croppedItems.find((item) => !savedIds.includes(item.id));
+    if (nextItem) setActiveCropId(nextItem.id);
+  };
+
+  const handleSave = async ({ continueRegister = false } = {}) => {
     const finalMember = member === "__new__" ? newMember.trim() : member.trim();
     const finalType = type.trim();
     const finalMemberKana = member === "__new__" ? newMemberKana.trim() : memberKanaMap[member] || "";
@@ -740,6 +759,14 @@ export default function PhotoBulkCropPage() {
       );
 
       await saveUserPhotos(user.uid, firestorePhotos);
+
+      if (continueRegister) {
+        const savedIds = selectedItemsForSave.map((item) => item.id);
+        resetSelectedItemsAfterContinuousSave(savedIds);
+        setMessage(`${selectedItemsForSave.length}件を保存しました。続けて別の候補を選択して登録できます。`);
+        alert("保存しました。続けて登録できます。");
+        return;
+      }
 
       alert("保存しました");
       router.push(`/select?group=${encodeURIComponent(group)}`);
@@ -958,14 +985,25 @@ export default function PhotoBulkCropPage() {
             )}
 
             {croppedItems.length > 0 && (
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSaving}
-                className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition mt-5"
-              >
-                {isSaving ? "保存中..." : "保存する"}
-              </button>
+              <div className="grid gap-3 mt-5">
+                <button
+                  type="button"
+                  onClick={() => handleSave({ continueRegister: true })}
+                  disabled={isSaving || selectedItems.length === 0}
+                  className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition"
+                >
+                  {isSaving ? "保存中..." : "連続して登録"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSave({ continueRegister: false })}
+                  disabled={isSaving || selectedItems.length === 0}
+                  className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition"
+                >
+                  {isSaving ? "保存中..." : "保存して戻る"}
+                </button>
+              </div>
             )}
           </div>
         </div>
