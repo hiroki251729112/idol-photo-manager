@@ -985,23 +985,23 @@ export default function PhotoBulkCropPage() {
             )}
 
             {croppedItems.length > 0 && (
-              <div className="grid gap-3 mt-5">
-                <button
-                  type="button"
-                  onClick={() => handleSave({ continueRegister: true })}
-                  disabled={isSaving || selectedItems.length === 0}
-                  className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition"
-                >
-                  {isSaving ? "保存中..." : "連続して登録"}
-                </button>
-
+              <div className="grid grid-cols-2 gap-3 mt-5">
                 <button
                   type="button"
                   onClick={() => handleSave({ continueRegister: false })}
                   disabled={isSaving || selectedItems.length === 0}
-                  className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition"
+                  className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-sm md:text-lg active:scale-[0.98] transition"
                 >
                   {isSaving ? "保存中..." : "保存して戻る"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSave({ continueRegister: true })}
+                  disabled={isSaving || selectedItems.length === 0}
+                  className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-sm md:text-lg active:scale-[0.98] transition"
+                >
+                  {isSaving ? "保存中..." : "連続して登録"}
                 </button>
               </div>
             )}
