@@ -1,15 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import html2canvas from "html2canvas";
+import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getUserPhotos } from "@/lib/photoService";
 
 export default function ExportPage() {
-  const exportRef = useRef(null);
-
   const [group, setGroup] = useState("");
   const [photos, setPhotos] = useState([]);
   const [exportMode, setExportMode] = useState("member");
@@ -18,7 +15,7 @@ export default function ExportPage() {
   const [message, setMessage] = useState("");
   const [previewImage, setPreviewImage] = useState("");
   const [previewBlob, setPreviewBlob] = useState(null);
-  const [showImageOnly, setShowImageOnly] = useState(false);
+  const [imageOnlyMode, setImageOnlyMode] = useState(false);
 
   const getPhotoKey = (photo) => {
     return [
@@ -121,14 +118,10 @@ export default function ExportPage() {
     if (!generation) return 9999;
 
     const graduateMatch = generation.match(/卒業生（(\d+)期生）/);
-    if (graduateMatch) {
-      return 100 + Number(graduateMatch[1]);
-    }
+    if (graduateMatch) return 100 + Number(graduateMatch[1]);
 
     const normalMatch = generation.match(/(\d+)期生/);
-    if (normalMatch) {
-      return Number(normalMatch[1]);
-    }
+    if (normalMatch) return Number(normalMatch[1]);
 
     if (generation === "卒業生") return 199;
 
@@ -214,24 +207,25 @@ export default function ExportPage() {
     });
   }, [filteredPhotos, exportMode, poseOrder]);
 
-  const createExportCanvas = async () => {
-    if (!exportRef.current) return null;
+  const wrapText = (ctx, text, maxWidth) => {
+    const chars = String(text || "").split("");
+    const lines = [];
+    let line = "";
 
-    if (document.fonts?.ready) {
-      await document.fonts.ready;
-    }
+    chars.forEach((char) => {
+      const testLine = line + char;
+      const metrics = ctx.measureText(testLine);
 
-    return await html2canvas(exportRef.current, {
-      backgroundColor: "#ffffff",
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: document.documentElement.scrollWidth,
-      windowHeight: document.documentElement.scrollHeight,
+      if (metrics.width > maxWidth && line) {
+        lines.push(line);
+        line = char;
+      } else {
+        line = testLine;
+      }
     });
+
+    if (line) lines.push(line);
+    return lines;
   };
 
   const canvasToBlob = (canvas) => {
@@ -240,11 +234,119 @@ export default function ExportPage() {
     });
   };
 
-  const createAndSetPreview = async () => {
-    const canvas = await createExportCanvas();
+  const drawExportImage = async () => {
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
 
-    if (!canvas) return null;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const width = 1080;
+    const paddingX = 70;
+    const maxTextWidth = width - paddingX * 2;
 
+    const lines = [];
+
+    lines.push({ type: "title", text: `${group} 生写真 所持リスト` });
+    lines.push({ type: "meta", text: `${exportMode === "member" ? "メンバー別" : "種類別"}・合計 ${totalCount}枚` });
+    lines.push({ type: "space", height: 28 });
+
+    if (exportItems.length === 0) {
+      lines.push({ type: "normal", text: "生写真が登録されていません。" });
+    } else {
+      exportItems.forEach((item, itemIndex) => {
+        if (itemIndex > 0) lines.push({ type: "space", height: 24 });
+
+        lines.push({ type: "section", text: item.title });
+        lines.push({ type: "rule" });
+
+        item.rows.forEach((row) => {
+          lines.push({ type: "row", label: row.label, text: `[${row.poses}]` });
+        });
+      });
+    }
+
+    let height = 70;
+
+    lines.forEach((line) => {
+      if (line.type === "title") height += 56;
+      else if (line.type === "meta") height += 42;
+      else if (line.type === "space") height += line.height;
+      else if (line.type === "section") height += 56;
+      else if (line.type === "rule") height += 20;
+      else if (line.type === "row") {
+        ctx.font = "28px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        const wrapped = wrapText(ctx, `${line.label}　${line.text}`, maxTextWidth - 30);
+        height += Math.max(44, wrapped.length * 38 + 10);
+      } else {
+        height += 44;
+      }
+    });
+
+    height += 80;
+
+    canvas.width = width;
+    canvas.height = height;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+
+    let y = 70;
+
+    lines.forEach((line) => {
+      if (line.type === "title") {
+        ctx.fillStyle = "#111827";
+        ctx.font = "bold 52px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        wrapText(ctx, line.text, maxTextWidth).forEach((textLine) => {
+          ctx.fillText(textLine, paddingX, y);
+          y += 60;
+        });
+      } else if (line.type === "meta") {
+        ctx.fillStyle = "#6b7280";
+        ctx.font = "32px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillText(line.text, paddingX, y);
+        y += 42;
+      } else if (line.type === "space") {
+        y += line.height;
+      } else if (line.type === "section") {
+        ctx.fillStyle = "#111827";
+        ctx.font = "bold 40px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        wrapText(ctx, line.text, maxTextWidth).forEach((textLine) => {
+          ctx.fillText(textLine, paddingX, y);
+          y += 48;
+        });
+      } else if (line.type === "rule") {
+        ctx.strokeStyle = "#d1d5db";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(paddingX, y);
+        ctx.lineTo(width - paddingX, y);
+        ctx.stroke();
+        y += 20;
+      } else if (line.type === "row") {
+        ctx.fillStyle = "#374151";
+        ctx.font = "bold 30px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        const rowText = `${line.label}　${line.text}`;
+        const wrapped = wrapText(ctx, rowText, maxTextWidth - 30);
+
+        wrapped.forEach((textLine, index) => {
+          ctx.fillText(textLine, paddingX + 30, y + index * 38);
+        });
+
+        y += Math.max(44, wrapped.length * 38 + 10);
+      } else {
+        ctx.fillStyle = "#374151";
+        ctx.font = "28px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillText(line.text, paddingX, y);
+        y += 44;
+      }
+    });
+
+    return canvas;
+  };
+
+  const createImage = async () => {
+    const canvas = await drawExportImage();
     const image = canvas.toDataURL("image/png");
     const blob = await canvasToBlob(canvas);
 
@@ -254,21 +356,21 @@ export default function ExportPage() {
     return { image, blob };
   };
 
-  const handleCreatePreview = async () => {
-    if (!exportRef.current || isCreating) return;
+  const handleCreateImage = async () => {
+    if (isCreating) return;
 
     try {
       setIsCreating(true);
       setMessage("画像を作成しています...");
 
-      const result = await createAndSetPreview();
+      const result = await createImage();
 
       if (!result?.image) {
         setMessage("画像の作成に失敗しました。");
         return;
       }
 
-      setMessage("保存用画像を作成しました。上の保存用プレビューを開くか、共有して保存してください。");
+      setMessage("画像を作成しました。下の画像を長押し保存してください。共有保存も試せます。");
     } catch (error) {
       console.error(error);
       setMessage("画像の作成に失敗しました。もう一度試してください。");
@@ -277,51 +379,19 @@ export default function ExportPage() {
     }
   };
 
-  const handleDownload = async () => {
-    if (!exportRef.current || isCreating) return;
-
-    try {
-      setIsCreating(true);
-      setMessage("画像を作成しています...");
-
-      const result = previewImage && previewBlob
-        ? { image: previewImage, blob: previewBlob }
-        : await createAndSetPreview();
-
-      if (!result?.image) {
-        setMessage("画像の作成に失敗しました。");
-        return;
-      }
-
-      const link = document.createElement("a");
-      link.href = result.image;
-      link.download = `${group || "collection"}-${exportMode}-list.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      setMessage("保存が始まらない場合は、保存用プレビューを開いて画像を長押ししてください。");
-    } catch (error) {
-      console.error(error);
-      setMessage("画像保存に失敗しました。保存用プレビューを開いて長押し保存してください。");
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   const handleShare = async () => {
-    if (!exportRef.current || isCreating) return;
+    if (isCreating) return;
 
     try {
       setIsCreating(true);
       setMessage("共有用画像を作成しています...");
 
-      const result = previewImage && previewBlob
+      const result = previewBlob
         ? { image: previewImage, blob: previewBlob }
-        : await createAndSetPreview();
+        : await createImage();
 
       if (!result?.blob) {
-        setMessage("共有用画像の作成に失敗しました。");
+        setMessage("共有用画像を作成できませんでした。");
         return;
       }
 
@@ -334,43 +404,49 @@ export default function ExportPage() {
           title: "生写真 所持リスト",
           text: "作成した一覧画像です。",
         });
-        setMessage("共有画面を開きました。画像を保存してください。");
+        setMessage("共有画面を開きました。共有先で画像を保存してください。");
       } else {
-        setMessage("このブラウザでは共有保存に対応していません。保存用プレビューを開いて長押し保存してください。");
+        setMessage("このブラウザでは共有保存に対応していません。下の画像を長押し保存してください。");
       }
     } catch (error) {
       if (error?.name === "AbortError") {
         setMessage("共有をキャンセルしました。");
       } else {
         console.error(error);
-        setMessage("共有に失敗しました。保存用プレビューを開いて長押し保存してください。");
+        setMessage("共有に失敗しました。下の画像を長押し保存してください。");
       }
     } finally {
       setIsCreating(false);
     }
   };
 
-  const handleOpenImage = async () => {
-    if (!exportRef.current || isCreating) return;
+  const handleDownload = async () => {
+    if (isCreating) return;
 
     try {
       setIsCreating(true);
       setMessage("画像を作成しています...");
 
-      const result = previewImage && previewBlob
+      const result = previewImage
         ? { image: previewImage, blob: previewBlob }
-        : await createAndSetPreview();
+        : await createImage();
 
       if (!result?.image) {
-        setMessage("画像を作成できませんでした。もう一度試してください。");
+        setMessage("画像を作成できませんでした。");
         return;
       }
 
-      setShowImageOnly(true);
-      setMessage("保存用プレビューを開きました。画像を長押しして保存してください。");
+      const link = document.createElement("a");
+      link.href = result.image;
+      link.download = `${group || "collection"}-${exportMode}-list.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      setMessage("保存が始まらない場合は、下の画像を長押し保存してください。");
     } catch (error) {
       console.error(error);
-      setMessage("保存用プレビューを開けませんでした。もう一度プレビュー画像を作成してください。");
+      setMessage("直接保存に失敗しました。下の画像を長押し保存してください。");
     } finally {
       setIsCreating(false);
     }
@@ -387,26 +463,26 @@ export default function ExportPage() {
     );
   }
 
-  if (showImageOnly && previewImage) {
+  if (imageOnlyMode && previewImage) {
     return (
       <main className="min-h-screen bg-black text-white px-4 py-5">
         <div className="w-full max-w-md mx-auto">
           <button
             type="button"
-            onClick={() => setShowImageOnly(false)}
+            onClick={() => setImageOnlyMode(false)}
             className="text-cyan-400 text-sm mb-4"
           >
             ← 作成画面に戻る
           </button>
 
-          <h1 className="text-2xl font-bold mb-2">保存用プレビュー</h1>
+          <h1 className="text-2xl font-bold mb-2">保存用画像</h1>
           <p className="text-sm text-zinc-400 leading-6 mb-4">
             下の画像を長押しして「写真に保存」または「画像を保存」を選んでください。
           </p>
 
           <img
             src={previewImage}
-            alt="保存用プレビュー"
+            alt="保存用画像"
             className="w-full h-auto block rounded-2xl bg-white"
           />
         </div>
@@ -432,10 +508,10 @@ export default function ExportPage() {
           {group}・{exportMode === "member" ? "メンバー別" : "種類別"}
         </p>
 
-        <div className="grid gap-3 mb-3">
+        <div className="grid gap-3 mb-4">
           <button
             type="button"
-            onClick={handleCreatePreview}
+            onClick={handleCreateImage}
             disabled={isCreating}
             className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
           >
@@ -454,26 +530,17 @@ export default function ExportPage() {
 
             <button
               type="button"
-              onClick={handleOpenImage}
-              disabled={isCreating || !previewImage}
+              onClick={handleDownload}
+              disabled={isCreating}
               className="w-full bg-zinc-800 disabled:bg-zinc-700 disabled:text-zinc-400 text-white border border-zinc-700 rounded-2xl py-3 font-bold active:scale-[0.98] transition"
             >
-              プレビューを開く
+              直接保存
             </button>
           </div>
-
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={isCreating}
-            className="w-full bg-zinc-900 disabled:bg-zinc-700 disabled:text-zinc-400 text-zinc-200 border border-zinc-700 rounded-2xl py-3 font-bold active:scale-[0.98] transition"
-          >
-            画像として保存を試す
-          </button>
         </div>
 
         <p className="text-xs text-zinc-500 leading-5 mb-4">
-          スマホでは「共有して保存」または「保存用画像を作成」→「プレビューを開く」→画像を長押し保存がおすすめです。
+          まず「保存用画像を作成」を押してください。画像が表示されたら、長押し保存できます。
         </p>
 
         {message && (
@@ -486,15 +553,17 @@ export default function ExportPage() {
           <div className="bg-zinc-900 border border-cyan-500 rounded-3xl p-3 mb-6">
             <p className="text-sm font-bold mb-2">保存用画像</p>
             <p className="text-xs text-zinc-400 leading-5 mb-3">
-              「プレビューを開く」を押すと、この画像だけの画面になります。そこで長押し保存してください。
+              この画像を長押しして保存できます。見づらい場合は下のボタンで画像だけ表示してください。
             </p>
+
             <button
               type="button"
-              onClick={() => setShowImageOnly(true)}
-              className="w-full mb-3 bg-cyan-500 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+              onClick={() => setImageOnlyMode(true)}
+              className="w-full bg-cyan-500 text-black rounded-2xl py-3 font-bold mb-3 active:scale-[0.98] transition"
             >
-              保存用プレビューを開く
+              画像だけ表示する
             </button>
+
             <img
               src={previewImage}
               alt="保存用画像"
@@ -503,10 +572,7 @@ export default function ExportPage() {
           </div>
         )}
 
-        <div
-          ref={exportRef}
-          className="bg-white text-black p-5 rounded-2xl"
-        >
+        <div className="bg-white text-black p-5 rounded-2xl">
           <h2 className="text-2xl font-bold mb-1">
             {group} 生写真 所持リスト
           </h2>
