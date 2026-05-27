@@ -17,6 +17,8 @@ export default function ExportPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [message, setMessage] = useState("");
   const [previewImage, setPreviewImage] = useState("");
+  const [previewBlob, setPreviewBlob] = useState(null);
+  const [showImageOnly, setShowImageOnly] = useState(false);
 
   const getPhotoKey = (photo) => {
     return [
@@ -212,14 +214,14 @@ export default function ExportPage() {
     });
   }, [filteredPhotos, exportMode, poseOrder]);
 
-  const createExportImage = async () => {
-    if (!exportRef.current) return "";
+  const createExportCanvas = async () => {
+    if (!exportRef.current) return null;
 
     if (document.fonts?.ready) {
       await document.fonts.ready;
     }
 
-    const canvas = await html2canvas(exportRef.current, {
+    return await html2canvas(exportRef.current, {
       backgroundColor: "#ffffff",
       scale: 2,
       useCORS: true,
@@ -230,8 +232,26 @@ export default function ExportPage() {
       windowWidth: document.documentElement.scrollWidth,
       windowHeight: document.documentElement.scrollHeight,
     });
+  };
 
-    return canvas.toDataURL("image/png");
+  const canvasToBlob = (canvas) => {
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), "image/png", 1);
+    });
+  };
+
+  const createAndSetPreview = async () => {
+    const canvas = await createExportCanvas();
+
+    if (!canvas) return null;
+
+    const image = canvas.toDataURL("image/png");
+    const blob = await canvasToBlob(canvas);
+
+    setPreviewImage(image);
+    setPreviewBlob(blob);
+
+    return { image, blob };
   };
 
   const handleCreatePreview = async () => {
@@ -241,15 +261,14 @@ export default function ExportPage() {
       setIsCreating(true);
       setMessage("画像を作成しています...");
 
-      const image = await createExportImage();
+      const result = await createAndSetPreview();
 
-      if (!image) {
+      if (!result?.image) {
         setMessage("画像の作成に失敗しました。");
         return;
       }
 
-      setPreviewImage(image);
-      setMessage("画像を作成しました。下のプレビュー画像を長押しして保存してください。");
+      setMessage("保存用画像を作成しました。上の保存用プレビューを開くか、共有して保存してください。");
     } catch (error) {
       console.error(error);
       setMessage("画像の作成に失敗しました。もう一度試してください。");
@@ -265,26 +284,67 @@ export default function ExportPage() {
       setIsCreating(true);
       setMessage("画像を作成しています...");
 
-      const image = await createExportImage();
+      const result = previewImage && previewBlob
+        ? { image: previewImage, blob: previewBlob }
+        : await createAndSetPreview();
 
-      if (!image) {
+      if (!result?.image) {
         setMessage("画像の作成に失敗しました。");
         return;
       }
 
-      setPreviewImage(image);
-
       const link = document.createElement("a");
-      link.href = image;
+      link.href = result.image;
       link.download = `${group || "collection"}-${exportMode}-list.png`;
       document.body.appendChild(link);
       link.click();
       link.remove();
 
-      setMessage("保存が始まらない場合は、下のプレビュー画像を長押しして保存してください。");
+      setMessage("保存が始まらない場合は、保存用プレビューを開いて画像を長押ししてください。");
     } catch (error) {
       console.error(error);
-      setMessage("画像保存に失敗しました。下のプレビュー作成も試してください。");
+      setMessage("画像保存に失敗しました。保存用プレビューを開いて長押し保存してください。");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!exportRef.current || isCreating) return;
+
+    try {
+      setIsCreating(true);
+      setMessage("共有用画像を作成しています...");
+
+      const result = previewImage && previewBlob
+        ? { image: previewImage, blob: previewBlob }
+        : await createAndSetPreview();
+
+      if (!result?.blob) {
+        setMessage("共有用画像の作成に失敗しました。");
+        return;
+      }
+
+      const fileName = `${group || "collection"}-${exportMode}-list.png`;
+      const file = new File([result.blob], fileName, { type: "image/png" });
+
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({
+          files: [file],
+          title: "生写真 所持リスト",
+          text: "作成した一覧画像です。",
+        });
+        setMessage("共有画面を開きました。画像を保存してください。");
+      } else {
+        setMessage("このブラウザでは共有保存に対応していません。保存用プレビューを開いて長押し保存してください。");
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setMessage("共有をキャンセルしました。");
+      } else {
+        console.error(error);
+        setMessage("共有に失敗しました。保存用プレビューを開いて長押し保存してください。");
+      }
     } finally {
       setIsCreating(false);
     }
@@ -293,52 +353,24 @@ export default function ExportPage() {
   const handleOpenImage = async () => {
     if (!exportRef.current || isCreating) return;
 
-    const imageWindow = window.open("", "_blank");
-
-    if (imageWindow) {
-      imageWindow.document.write(
-        "<html><head><title>一覧画像</title><meta name='viewport' content='width=device-width, initial-scale=1.0'></head><body style='margin:0;background:#111;color:white;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;box-sizing:border-box;'><p>画像を作成しています...</p></body></html>"
-      );
-      imageWindow.document.close();
-    }
-
     try {
       setIsCreating(true);
       setMessage("画像を作成しています...");
 
-      const image = await createExportImage();
+      const result = previewImage && previewBlob
+        ? { image: previewImage, blob: previewBlob }
+        : await createAndSetPreview();
 
-      if (!image) {
-        setMessage("画像の作成に失敗しました。");
-        if (imageWindow) imageWindow.close();
+      if (!result?.image) {
+        setMessage("画像を作成できませんでした。もう一度試してください。");
         return;
       }
 
-      setPreviewImage(image);
-
-      if (imageWindow) {
-        imageWindow.document.open();
-        imageWindow.document.write(`
-          <html>
-            <head>
-              <title>一覧画像</title>
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            </head>
-            <body style="margin:0;background:#111;color:white;font-family:sans-serif;padding:16px;box-sizing:border-box;">
-              <p style="font-size:14px;line-height:1.7;margin:0 0 12px;">画像を長押しして保存してください。</p>
-              <img src="${image}" style="width:100%;height:auto;display:block;background:white;border-radius:12px;" />
-            </body>
-          </html>
-        `);
-        imageWindow.document.close();
-        setMessage("画像を別タブで開きました。画像を長押しして保存してください。");
-      } else {
-        setMessage("別タブを開けませんでした。下のプレビュー画像を長押しして保存してください。");
-      }
+      setShowImageOnly(true);
+      setMessage("保存用プレビューを開きました。画像を長押しして保存してください。");
     } catch (error) {
       console.error(error);
-      setMessage("画像を開けませんでした。下のプレビュー作成も試してください。");
-      if (imageWindow) imageWindow.close();
+      setMessage("保存用プレビューを開けませんでした。もう一度プレビュー画像を作成してください。");
     } finally {
       setIsCreating(false);
     }
@@ -350,6 +382,33 @@ export default function ExportPage() {
         <div className="text-center">
           <p className="text-xl font-bold">読み込み中...</p>
           <p className="text-zinc-400 text-sm mt-2">一覧画像用データを取得しています</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (showImageOnly && previewImage) {
+    return (
+      <main className="min-h-screen bg-black text-white px-4 py-5">
+        <div className="w-full max-w-md mx-auto">
+          <button
+            type="button"
+            onClick={() => setShowImageOnly(false)}
+            className="text-cyan-400 text-sm mb-4"
+          >
+            ← 作成画面に戻る
+          </button>
+
+          <h1 className="text-2xl font-bold mb-2">保存用プレビュー</h1>
+          <p className="text-sm text-zinc-400 leading-6 mb-4">
+            下の画像を長押しして「写真に保存」または「画像を保存」を選んでください。
+          </p>
+
+          <img
+            src={previewImage}
+            alt="保存用プレビュー"
+            className="w-full h-auto block rounded-2xl bg-white"
+          />
         </div>
       </main>
     );
@@ -380,32 +439,41 @@ export default function ExportPage() {
             disabled={isCreating}
             className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
           >
-            {isCreating ? "作成中..." : "プレビュー画像を作成"}
+            {isCreating ? "作成中..." : "保存用画像を作成"}
           </button>
 
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={handleDownload}
+              onClick={handleShare}
               disabled={isCreating}
               className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
             >
-              画像として保存
+              共有して保存
             </button>
 
             <button
               type="button"
               onClick={handleOpenImage}
-              disabled={isCreating}
+              disabled={isCreating || !previewImage}
               className="w-full bg-zinc-800 disabled:bg-zinc-700 disabled:text-zinc-400 text-white border border-zinc-700 rounded-2xl py-3 font-bold active:scale-[0.98] transition"
             >
-              画像を開く
+              プレビューを開く
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={isCreating}
+            className="w-full bg-zinc-900 disabled:bg-zinc-700 disabled:text-zinc-400 text-zinc-200 border border-zinc-700 rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+          >
+            画像として保存を試す
+          </button>
         </div>
 
         <p className="text-xs text-zinc-500 leading-5 mb-4">
-          スマホで直接保存できない場合は、「プレビュー画像を作成」を押して、下に出た画像を長押しして保存してください。
+          スマホでは「共有して保存」または「保存用画像を作成」→「プレビューを開く」→画像を長押し保存がおすすめです。
         </p>
 
         {message && (
@@ -416,13 +484,20 @@ export default function ExportPage() {
 
         {previewImage && (
           <div className="bg-zinc-900 border border-cyan-500 rounded-3xl p-3 mb-6">
-            <p className="text-sm font-bold mb-2">保存用プレビュー</p>
+            <p className="text-sm font-bold mb-2">保存用画像</p>
             <p className="text-xs text-zinc-400 leading-5 mb-3">
-              この画像を長押しして「写真に保存」または「画像を保存」を選んでください。
+              「プレビューを開く」を押すと、この画像だけの画面になります。そこで長押し保存してください。
             </p>
+            <button
+              type="button"
+              onClick={() => setShowImageOnly(true)}
+              className="w-full mb-3 bg-cyan-500 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+            >
+              保存用プレビューを開く
+            </button>
             <img
               src={previewImage}
-              alt="保存用プレビュー"
+              alt="保存用画像"
               className="w-full rounded-2xl bg-white"
             />
           </div>
