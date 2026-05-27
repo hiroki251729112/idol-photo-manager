@@ -15,7 +15,6 @@ export default function ExportPage() {
   const [message, setMessage] = useState("");
   const [previewImage, setPreviewImage] = useState("");
   const [previewBlob, setPreviewBlob] = useState(null);
-  const [imageOnlyMode, setImageOnlyMode] = useState(false);
 
   const getPhotoKey = (photo) => {
     return [
@@ -413,36 +412,14 @@ export default function ExportPage() {
     return { image, blob };
   };
 
-  const handleCreateImage = async () => {
-    if (isCreating) return;
-
-    try {
-      setIsCreating(true);
-      setMessage("画像を作成しています...");
-      const result = await createImage();
-
-      if (!result?.image) {
-        setMessage("画像の作成に失敗しました。");
-        return;
-      }
-
-      setMessage("画像を作成しました。下に表示された画像を確認してください。");
-    } catch (error) {
-      console.error(error);
-      setMessage("画像の作成に失敗しました。もう一度試してください。");
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   const handleSaveImage = async () => {
     if (isCreating) return;
 
     try {
       setIsCreating(true);
-      setMessage("保存用画像を準備しています...");
+      setMessage("保存用画像を作成しています...");
 
-      const result = previewBlob ? { image: previewImage, blob: previewBlob } : await createImage();
+      const result = await createImage();
 
       if (!result?.blob || !result?.image) {
         setMessage("画像を準備できませんでした。");
@@ -460,7 +437,7 @@ export default function ExportPage() {
             title: "生写真 所持リスト",
             text: "作成した一覧画像です。",
           });
-          setMessage("共有画面を開きました。保存先を選んで画像を保存してください。");
+          setMessage("画像の保存操作が完了しました。共有先で保存できているか確認してください。");
           return;
         }
       }
@@ -471,13 +448,13 @@ export default function ExportPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      setMessage("保存を開始しました。うまくいかない場合は、表示された画像を長押し保存してください。");
+      setMessage("画像の保存を開始しました。保存できない場合は、下の画像を長押し保存してください。");
     } catch (error) {
       if (error?.name === "AbortError") {
         setMessage("保存をキャンセルしました。");
       } else {
         console.error(error);
-        setMessage("保存に失敗しました。表示された画像を長押し保存してください。");
+        setMessage("保存に失敗しました。下の画像を長押し保存してください。");
       }
     } finally {
       setIsCreating(false);
@@ -495,38 +472,11 @@ export default function ExportPage() {
     );
   }
 
-  if (imageOnlyMode && previewImage) {
-    return (
-      <main className="min-h-screen bg-black text-white px-4 py-5">
-        <div className="w-full max-w-md mx-auto">
-          <button
-            type="button"
-            onClick={() => setImageOnlyMode(false)}
-            className="text-cyan-400 text-sm mb-4"
-          >
-            ← 作成画面に戻る
-          </button>
-
-          <h1 className="text-2xl font-bold mb-2">保存用画像</h1>
-          <p className="text-sm text-zinc-400 leading-6 mb-4">
-            下の画像を長押しして「写真に保存」または「画像を保存」を選んでください。
-          </p>
-
-          <img
-            src={previewImage}
-            alt="保存用画像"
-            className="w-full h-auto block rounded-2xl bg-white"
-          />
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main className="min-h-screen bg-black text-white px-4 py-5">
       <div className="w-full max-w-md mx-auto">
         <Link
-          href={`/select?group=${encodeURIComponent(group)}`}
+          href={`/select?group=${encodeURIComponent(group)}&mode=${exportMode}`}
           className="text-cyan-400 text-sm"
         >
           ← 戻る
@@ -541,43 +491,26 @@ export default function ExportPage() {
         <div className="grid gap-3 mb-4">
           <button
             type="button"
-            onClick={handleCreateImage}
+            onClick={handleSaveImage}
             disabled={isCreating}
             className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
           >
-            {isCreating ? "作成中..." : "保存用画像を作成"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSaveImage}
-            disabled={isCreating}
-            className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
-          >
-            画像を保存
+            {isCreating ? "作成・保存中..." : "画像を保存"}
           </button>
         </div>
 
         <p className="text-xs text-zinc-500 leading-5 mb-4">
-          先に「保存用画像を作成」を押してください。作成後は「画像を保存」から保存できます。
+          ボタンを押すと一覧画像を作成し、保存画面を開きます。
         </p>
 
         {message && <p className="text-sm text-zinc-400 leading-6 mb-4">{message}</p>}
 
         {previewImage && (
           <div className="bg-zinc-900 border border-cyan-500 rounded-3xl p-3 mb-6">
-            <p className="text-sm font-bold mb-2">保存用画像</p>
+            <p className="text-sm font-bold mb-2">作成した画像</p>
             <p className="text-xs text-zinc-400 leading-5 mb-3">
-              見づらい場合は下のボタンで画像だけ表示してください。
+              保存できない場合は、この画像を長押しして保存してください。
             </p>
-
-            <button
-              type="button"
-              onClick={() => setImageOnlyMode(true)}
-              className="w-full bg-cyan-500 text-black rounded-2xl py-3 font-bold mb-3 active:scale-[0.98] transition"
-            >
-              画像だけ表示する
-            </button>
 
             <img src={previewImage} alt="保存用画像" className="w-full rounded-2xl bg-white" />
           </div>
