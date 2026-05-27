@@ -34,9 +34,7 @@ export default function ExportPage() {
       localMap.set(getPhotoKey(photo), photo);
     });
 
-    if (!firestorePhotos.length) {
-      return localPhotos;
-    }
+    if (!firestorePhotos.length) return localPhotos;
 
     return firestorePhotos.map((photo) => {
       const localPhoto = localMap.get(getPhotoKey(photo));
@@ -65,11 +63,7 @@ export default function ExportPage() {
 
         if (currentUser) {
           const firestorePhotos = await getUserPhotos(currentUser.uid);
-          const mergedPhotos = mergeFirestoreAndLocalPhotos(
-            firestorePhotos,
-            localPhotos
-          );
-          setPhotos(mergedPhotos);
+          setPhotos(mergeFirestoreAndLocalPhotos(firestorePhotos, localPhotos));
         } else {
           setPhotos(localPhotos);
         }
@@ -87,9 +81,7 @@ export default function ExportPage() {
 
   const filteredPhotos = useMemo(() => {
     const activePhotos = photos.filter((photo) => Number(photo.count || 0) > 0);
-
     if (!group) return activePhotos;
-
     return activePhotos.filter((photo) => photo.group === group);
   }, [photos, group]);
 
@@ -101,12 +93,8 @@ export default function ExportPage() {
   }, [filteredPhotos]);
 
   const poseOrder = useMemo(() => {
-    if (group === "乃木坂46") {
-      return ["ヨリ", "チュウ", "座りヨリ", "ヒキ", "座り", "その他"];
-    }
-
     return ["ヨリ", "チュウ", "座りヨリ", "ヒキ", "座り", "その他"];
-  }, [group]);
+  }, []);
 
   const getPoseSortIndex = (pose) => {
     const index = poseOrder.indexOf(pose);
@@ -138,10 +126,7 @@ export default function ExportPage() {
 
     filteredPhotos.forEach((photo) => {
       const mainKey =
-        exportMode === "member"
-          ? photo.member
-          : `${photo.type}-${photo.year}`;
-
+        exportMode === "member" ? photo.member : `${photo.type}-${photo.year}`;
       const mainTitle = exportMode === "member" ? photo.member : photo.type;
       const subKey = exportMode === "member" ? photo.type : photo.member;
 
@@ -158,7 +143,6 @@ export default function ExportPage() {
       }
 
       const mainItem = mainMap.get(mainKey);
-
       mainItem.latestId = Math.max(mainItem.latestId, Number(photo.id || 0));
 
       if (!mainItem.generation && photo.generation) {
@@ -189,8 +173,7 @@ export default function ExportPage() {
     if (exportMode === "member") {
       return items.sort((a, b) => {
         const generationDiff =
-          getGenerationSortValue(a.generation) -
-          getGenerationSortValue(b.generation);
+          getGenerationSortValue(a.generation) - getGenerationSortValue(b.generation);
 
         if (generationDiff !== 0) return generationDiff;
 
@@ -200,9 +183,7 @@ export default function ExportPage() {
 
     return items.sort((a, b) => {
       const yearDiff = Number(b.year || 0) - Number(a.year || 0);
-
       if (yearDiff !== 0) return yearDiff;
-
       return Number(b.latestId || 0) - Number(a.latestId || 0);
     });
   }, [filteredPhotos, exportMode, poseOrder]);
@@ -224,25 +205,8 @@ export default function ExportPage() {
       }
     });
 
-    if (currentLine) {
-      lines.push(currentLine);
-    }
-
+    if (currentLine) lines.push(currentLine);
     return lines;
-  };
-
-  const drawRoundedRect = (ctx, x, y, width, height, radius) => {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
   };
 
   const canvasToBlob = (canvas) => {
@@ -252,44 +216,33 @@ export default function ExportPage() {
   };
 
   const getCanvasWidthByColumns = (columns) => {
-    if (columns === 1) return 1240;
-    if (columns === 2) return 1900;
-    if (columns === 3) return 2580;
-    return 3260;
+    if (columns === 1) return 900;
+    if (columns === 2) return 1280;
+    if (columns === 3) return 1760;
+    if (columns === 4) return 2200;
+    return 2600;
   };
 
-  const buildSectionLayouts = (ctx, items, columnWidth) => {
-    const cardPadding = 28;
-    const titleFont = "bold 34px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    const rowFont = "26px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    const innerWidth = columnWidth - cardPadding * 2;
+  const buildBlocks = (ctx, items, columnWidth) => {
+    const nameFont = "bold 27px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    const rowFont = "21px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
 
     return items.map((item) => {
-      ctx.font = titleFont;
-      const titleLines = wrapText(ctx, item.title, innerWidth);
+      ctx.font = nameFont;
+      const titleLines = wrapText(ctx, item.title, columnWidth);
 
       const rowLayouts = item.rows.map((row) => {
         ctx.font = rowFont;
         const rowText = `${row.label}　[${row.poses}]`;
-        const lines = wrapText(ctx, rowText, innerWidth);
-        return {
-          ...row,
-          lines,
-        };
+        const lines = wrapText(ctx, rowText, columnWidth);
+        return { rowText, lines };
       });
 
-      let height = cardPadding;
-      height += titleLines.length * 42;
-      height += 18;
-
-      rowLayouts.forEach((rowLayout, index) => {
-        height += rowLayout.lines.length * 32;
-        if (index < rowLayouts.length - 1) {
-          height += 12;
-        }
-      });
-
-      height += cardPadding;
+      const height =
+        titleLines.length * 31 +
+        5 +
+        rowLayouts.reduce((sum, row) => sum + row.lines.length * 25 + 3, 0) +
+        17;
 
       return {
         item,
@@ -300,106 +253,11 @@ export default function ExportPage() {
     });
   };
 
-  const chooseColumnConfig = (ctx, items) => {
-    const outerPadding = 60;
-    const columnGap = 32;
-    const headerHeight = 180;
-    const targetColumnHeight = 2200;
+  const distributeBlocks = (blocks, columns, headerHeight) => {
+    const columnHeights = Array(columns).fill(headerHeight);
+    const placements = [];
 
-    let selected = null;
-
-    for (let columns = 1; columns <= 4; columns += 1) {
-      const canvasWidth = getCanvasWidthByColumns(columns);
-      const columnWidth =
-        (canvasWidth - outerPadding * 2 - columnGap * (columns - 1)) / columns;
-
-      const layouts = buildSectionLayouts(ctx, items, columnWidth);
-      const columnHeights = Array(columns).fill(headerHeight);
-
-      layouts.forEach((layout) => {
-        let shortestIndex = 0;
-
-        for (let i = 1; i < columnHeights.length; i += 1) {
-          if (columnHeights[i] < columnHeights[shortestIndex]) {
-            shortestIndex = i;
-          }
-        }
-
-        columnHeights[shortestIndex] += layout.height + 24;
-      });
-
-      const maxHeight = Math.max(...columnHeights);
-
-      selected = {
-        columns,
-        canvasWidth,
-        columnWidth,
-        layouts,
-        maxHeight,
-      };
-
-      if (maxHeight <= targetColumnHeight) {
-        break;
-      }
-    }
-
-    return selected;
-  };
-
-  const drawExportImage = async () => {
-    if (document.fonts?.ready) {
-      await document.fonts.ready;
-    }
-
-    const tempCanvas = document.createElement("canvas");
-    const tempCtx = tempCanvas.getContext("2d");
-
-    const config = chooseColumnConfig(tempCtx, exportItems);
-
-    const outerPadding = 60;
-    const columnGap = 32;
-    const topPadding = 70;
-    const bottomPadding = 60;
-
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-
-    const canvasWidth = config.canvasWidth;
-    const canvasHeight = Math.ceil(config.maxHeight + bottomPadding);
-
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-    const titleFont = "bold 58px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    const metaFont = "32px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    const cardTitleFont = "bold 34px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    const rowFont = "26px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-
-    const columnHeights = Array(config.columns).fill(180);
-
-    ctx.fillStyle = "#111827";
-    ctx.font = titleFont;
-    ctx.fillText(`${group} 生写真 所持リスト`, outerPadding, topPadding);
-
-    ctx.fillStyle = "#6b7280";
-    ctx.font = metaFont;
-    ctx.fillText(
-      `${exportMode === "member" ? "メンバー別" : "種類別"}・合計 ${totalCount}枚`,
-      outerPadding,
-      topPadding + 52
-    );
-
-    if (config.layouts.length === 0) {
-      ctx.fillStyle = "#374151";
-      ctx.font = rowFont;
-      ctx.fillText("生写真が登録されていません。", outerPadding, topPadding + 130);
-      return canvas;
-    }
-
-    config.layouts.forEach((layout) => {
+    blocks.forEach((block) => {
       let shortestIndex = 0;
 
       for (let i = 1; i < columnHeights.length; i += 1) {
@@ -408,47 +266,137 @@ export default function ExportPage() {
         }
       }
 
-      const x =
-        outerPadding +
-        shortestIndex * (config.columnWidth + columnGap);
-      const y = columnHeights[shortestIndex];
-      const width = config.columnWidth;
-      const height = layout.height;
-      const cardPadding = 28;
+      placements.push({
+        ...block,
+        columnIndex: shortestIndex,
+        y: columnHeights[shortestIndex],
+      });
 
-      ctx.fillStyle = "#ffffff";
-      ctx.strokeStyle = "#d1d5db";
-      ctx.lineWidth = 3;
-      drawRoundedRect(ctx, x, y, width, height, 22);
-      ctx.fill();
-      ctx.stroke();
+      columnHeights[shortestIndex] += block.height;
+    });
 
-      let currentY = y + cardPadding + 6;
+    return {
+      placements,
+      columnHeights,
+      maxHeight: Math.max(...columnHeights),
+      minHeight: Math.min(...columnHeights),
+    };
+  };
+
+  const chooseBestLayout = (ctx, items) => {
+    const headerHeight = 105;
+    const outerPadding = 42;
+    const columnGap = 38;
+    const totalRows = items.reduce((sum, item) => sum + item.rows.length, 0);
+    const maxColumns = Math.min(5, Math.max(1, items.length));
+    const candidates = [];
+
+    for (let columns = 1; columns <= maxColumns; columns += 1) {
+      const canvasWidth = getCanvasWidthByColumns(columns);
+      const columnWidth =
+        (canvasWidth - outerPadding * 2 - columnGap * (columns - 1)) / columns;
+      const blocks = buildBlocks(ctx, items, columnWidth);
+      const distributed = distributeBlocks(blocks, columns, headerHeight);
+      const canvasHeight = Math.ceil(distributed.maxHeight + 34);
+      const aspectRatio = canvasWidth / canvasHeight;
+      const heightDifference = distributed.maxHeight - distributed.minHeight;
+
+      let score = 0;
+
+      if (canvasHeight > 3600) score += (canvasHeight - 3600) * 3;
+      if (canvasHeight > 5200) score += (canvasHeight - 5200) * 6;
+      if (aspectRatio > 2.1) score += (aspectRatio - 2.1) * 900;
+      if (aspectRatio < 0.55) score += (0.55 - aspectRatio) * 900;
+
+      score += heightDifference * 0.35;
+      score += columns * 55;
+
+      if (items.length <= 2 && columns > 1) score += 950;
+      if (items.length <= 4 && columns > 2) score += 700;
+      if (totalRows <= 40 && columns > 2) score += 550;
+
+      candidates.push({
+        columns,
+        canvasWidth,
+        canvasHeight,
+        columnWidth,
+        blocks,
+        ...distributed,
+        score,
+      });
+    }
+
+    return candidates.sort((a, b) => a.score - b.score)[0];
+  };
+
+  const drawExportImage = async () => {
+    if (document.fonts?.ready) await document.fonts.ready;
+
+    const tempCanvas = document.createElement("canvas");
+    const tempCtx = tempCanvas.getContext("2d");
+    const layout = chooseBestLayout(tempCtx, exportItems);
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const outerPadding = 42;
+    const columnGap = 38;
+    const topPadding = 36;
+
+    canvas.width = layout.canvasWidth;
+    canvas.height = layout.canvasHeight;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#111827";
+    ctx.font = "bold 40px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    ctx.fillText(`${group} 生写真 所持リスト`, outerPadding, topPadding);
+
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "24px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    ctx.fillText(
+      `${exportMode === "member" ? "メンバー別" : "種類別"}・合計 ${totalCount}枚`,
+      outerPadding,
+      topPadding + 36
+    );
+
+    if (layout.placements.length === 0) {
+      ctx.fillStyle = "#374151";
+      ctx.font = "22px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillText("生写真が登録されていません。", outerPadding, 108);
+      return canvas;
+    }
+
+    layout.placements.forEach((block) => {
+      const x = outerPadding + block.columnIndex * (layout.columnWidth + columnGap);
+      let y = block.y;
+
+      ctx.fillStyle = "#be123c";
+      ctx.font = "bold 27px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      block.titleLines.forEach((line) => {
+        ctx.fillText(line, x, y);
+        y += 31;
+      });
+
+      y += 5;
 
       ctx.fillStyle = "#111827";
-      ctx.font = cardTitleFont;
-      layout.titleLines.forEach((line) => {
-        ctx.fillText(line, x + cardPadding, currentY);
-        currentY += 42;
-      });
-
-      currentY += 10;
-
-      ctx.fillStyle = "#374151";
-      ctx.font = rowFont;
-
-      layout.rowLayouts.forEach((rowLayout, index) => {
+      ctx.font = "21px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      block.rowLayouts.forEach((rowLayout) => {
         rowLayout.lines.forEach((line) => {
-          ctx.fillText(line, x + cardPadding, currentY);
-          currentY += 32;
+          ctx.fillText(line, x, y);
+          y += 25;
         });
-
-        if (index < layout.rowLayouts.length - 1) {
-          currentY += 12;
-        }
+        y += 3;
       });
 
-      columnHeights[shortestIndex] += height + 24;
+      ctx.strokeStyle = "#e5e7eb";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, block.y + block.height - 8);
+      ctx.lineTo(x + layout.columnWidth, block.y + block.height - 8);
+      ctx.stroke();
     });
 
     return canvas;
@@ -471,7 +419,6 @@ export default function ExportPage() {
     try {
       setIsCreating(true);
       setMessage("画像を作成しています...");
-
       const result = await createImage();
 
       if (!result?.image) {
@@ -495,9 +442,7 @@ export default function ExportPage() {
       setIsCreating(true);
       setMessage("保存用画像を準備しています...");
 
-      const result = previewBlob
-        ? { image: previewImage, blob: previewBlob }
-        : await createImage();
+      const result = previewBlob ? { image: previewImage, blob: previewBlob } : await createImage();
 
       if (!result?.blob || !result?.image) {
         setMessage("画像を準備できませんでした。");
@@ -526,7 +471,6 @@ export default function ExportPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-
       setMessage("保存を開始しました。うまくいかない場合は、表示された画像を長押し保存してください。");
     } catch (error) {
       if (error?.name === "AbortError") {
@@ -545,9 +489,7 @@ export default function ExportPage() {
       <main className="min-h-screen bg-black text-white flex items-center justify-center px-4">
         <div className="text-center">
           <p className="text-xl font-bold">読み込み中...</p>
-          <p className="text-zinc-400 text-sm mt-2">
-            一覧画像用データを取得しています
-          </p>
+          <p className="text-zinc-400 text-sm mt-2">一覧画像用データを取得しています</p>
         </div>
       </main>
     );
@@ -620,11 +562,7 @@ export default function ExportPage() {
           先に「保存用画像を作成」を押してください。作成後は「画像を保存」から保存できます。
         </p>
 
-        {message && (
-          <p className="text-sm text-zinc-400 leading-6 mb-4">
-            {message}
-          </p>
-        )}
+        {message && <p className="text-sm text-zinc-400 leading-6 mb-4">{message}</p>}
 
         {previewImage && (
           <div className="bg-zinc-900 border border-cyan-500 rounded-3xl p-3 mb-6">
@@ -641,11 +579,7 @@ export default function ExportPage() {
               画像だけ表示する
             </button>
 
-            <img
-              src={previewImage}
-              alt="保存用画像"
-              className="w-full rounded-2xl bg-white"
-            />
+            <img src={previewImage} alt="保存用画像" className="w-full rounded-2xl bg-white" />
           </div>
         )}
 
@@ -659,23 +593,16 @@ export default function ExportPage() {
           </p>
 
           {exportItems.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              生写真が登録されていません。
-            </p>
+            <p className="text-sm text-gray-500">生写真が登録されていません。</p>
           ) : (
             <div className="grid gap-5">
               {exportItems.map((item, index) => (
                 <div key={index} className="border border-gray-300 rounded-2xl p-4">
-                  <p className="font-bold text-lg mb-3 break-words">
-                    {item.title}
-                  </p>
+                  <p className="font-bold text-lg mb-3 break-words">{item.title}</p>
 
                   <div className="grid gap-2">
                     {item.rows.map((row, rowIndex) => (
-                      <div
-                        key={rowIndex}
-                        className="text-sm leading-6 break-words text-gray-700"
-                      >
+                      <div key={rowIndex} className="text-sm leading-6 break-words text-gray-700">
                         <span className="font-bold">{row.label}</span>
                         <span>　[{row.poses}]</span>
                       </div>
