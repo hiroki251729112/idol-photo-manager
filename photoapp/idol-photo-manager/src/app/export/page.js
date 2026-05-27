@@ -14,6 +14,8 @@ export default function ExportPage() {
   const [photos, setPhotos] = useState([]);
   const [exportMode, setExportMode] = useState("member");
   const [isLoading, setIsLoading] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [message, setMessage] = useState("");
 
   const getPhotoKey = (photo) => {
     return [
@@ -209,20 +211,103 @@ export default function ExportPage() {
     });
   }, [filteredPhotos, exportMode, poseOrder]);
 
-  const handleDownload = async () => {
-    if (!exportRef.current) return;
+  const createExportBlob = async () => {
+    if (!exportRef.current) return null;
+
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
 
     const canvas = await html2canvas(exportRef.current, {
       backgroundColor: "#ffffff",
       scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      windowWidth: exportRef.current.scrollWidth,
+      windowHeight: exportRef.current.scrollHeight,
     });
 
-    const image = canvas.toDataURL("image/png");
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), "image/png", 1);
+    });
+  };
 
-    const link = document.createElement("a");
-    link.href = image;
-    link.download = `${group || "collection"}-${exportMode}-list.png`;
-    link.click();
+  const handleDownload = async () => {
+    if (!exportRef.current || isDownloading) return;
+
+    try {
+      setIsDownloading(true);
+      setMessage("画像を作成しています...");
+
+      const blob = await createExportBlob();
+
+      if (!blob) {
+        setMessage("画像の作成に失敗しました。");
+        return;
+      }
+
+      const fileName = `${group || "collection"}-${exportMode}-list.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({
+          files: [file],
+          title: "生写真 所持リスト",
+          text: "作成した一覧画像です。",
+        });
+        setMessage("共有画面を開きました。画像を保存してください。");
+        return;
+      }
+
+      const imageUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = imageUrl;
+      link.download = fileName;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      setTimeout(() => URL.revokeObjectURL(imageUrl), 1000);
+      setMessage("画像を保存しました。保存されない場合は、開いた画像を長押しして保存してください。");
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setMessage("保存をキャンセルしました。");
+      } else {
+        console.error(error);
+        setMessage("画像保存に失敗しました。もう一度試してください。");
+      }
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleOpenImage = async () => {
+    if (!exportRef.current || isDownloading) return;
+
+    try {
+      setIsDownloading(true);
+      setMessage("画像を作成しています...");
+
+      const blob = await createExportBlob();
+
+      if (!blob) {
+        setMessage("画像の作成に失敗しました。");
+        return;
+      }
+
+      const imageUrl = URL.createObjectURL(blob);
+      window.open(imageUrl, "_blank", "noopener,noreferrer");
+      setMessage("画像を新しいタブで開きました。画像を長押しして保存してください。");
+
+      setTimeout(() => URL.revokeObjectURL(imageUrl), 60000);
+    } catch (error) {
+      console.error(error);
+      setMessage("画像を開けませんでした。もう一度試してください。");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   if (isLoading) {
@@ -254,13 +339,35 @@ export default function ExportPage() {
           {group}・{exportMode === "member" ? "メンバー別" : "種類別"}
         </p>
 
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="w-full bg-white text-black rounded-2xl py-3 font-bold mb-6"
-        >
-          画像として保存
-        </button>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+          >
+            {isDownloading ? "作成中..." : "画像として保存"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenImage}
+            disabled={isDownloading}
+            className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+          >
+            画像を開く
+          </button>
+        </div>
+
+        <p className="text-xs text-zinc-500 leading-5 mb-6">
+          スマホで保存できない場合は、「画像を開く」を押して、開いた画像を長押しして保存してください。
+        </p>
+
+        {message && (
+          <p className="text-sm text-zinc-400 leading-6 mb-4">
+            {message}
+          </p>
+        )}
 
         <div
           ref={exportRef}
