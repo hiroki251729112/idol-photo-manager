@@ -48,6 +48,7 @@ function CountSelector({ value, onChange }) {
 export default function PhotoBulkCropPage() {
   const router = useRouter();
   const imageAreaRef = useRef(null);
+  const candidateAreaRef = useRef(null);
 
   const [user, setUser] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -226,6 +227,15 @@ export default function PhotoBulkCropPage() {
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [singleDragTarget, imageSize, sourceImage, croppedItems]);
+
+  const scrollToCandidates = () => {
+    setTimeout(() => {
+      candidateAreaRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
+  };
 
   const resetGridLines = () => {
     const cols = Math.max(1, Number(gridCols || 1));
@@ -529,6 +539,7 @@ export default function PhotoBulkCropPage() {
       setCroppedItems(results);
       if (results.length > 0 && !results.some((item) => item.id === activeCropId)) setActiveCropId(results[0].id);
       setMessage(isRecrop ? `${results.length}枚の候補を再切り出ししました。` : `${results.length}枚の候補を切り出しました。保存したい候補を選んでください。`);
+      scrollToCandidates();
     };
 
     img.onerror = () => setMessage("画像の切り出しに失敗しました。");
@@ -765,6 +776,7 @@ export default function PhotoBulkCropPage() {
         resetSelectedItemsAfterContinuousSave(savedIds);
         setMessage(`${selectedItemsForSave.length}件を保存しました。続けて別の候補を選択して登録できます。`);
         alert("保存しました。続けて登録できます。");
+        scrollToCandidates();
         return;
       }
 
@@ -809,122 +821,69 @@ export default function PhotoBulkCropPage() {
         <h1 className="text-3xl md:text-4xl font-bold mt-4 mb-2">まとめて画像追加</h1>
         <p className="text-zinc-400 mb-6">外枠と線を動かしてまとめて切り出し、その後に候補ごとに調整できます。</p>
 
-        <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="grid gap-5">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
-              <p className="text-sm text-zinc-400 mb-4">登録情報</p>
+        <div className="grid gap-5">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
+            <p className="text-sm text-zinc-400 mb-4">画像アップロード・全体切り出し</p>
+            <input type="file" accept="image/*" onChange={handleSourceImageChange} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm mb-4" />
 
-              <div className="grid gap-3">
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-2">メンバー</label>
-                  <select value={member} onChange={(e) => handleMemberChange(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
-                    <option value="">選択してください</option>
-                    {memberOptions.map((item) => <option key={item.member} value={item.member}>{item.member}</option>)}
-                    <option value="__new__">＋ 新しく追加</option>
-                  </select>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">横の枚数</label>
+                <input type="number" min="1" value={gridCols} onChange={(e) => setGridCols(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3" />
+              </div>
 
-                  {member === "__new__" && <input type="text" value={newMember} onChange={(e) => setNewMember(e.target.value)} placeholder="新しいメンバー名" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}
-                  {member === "__new__" && <input type="text" value={newMemberKana} onChange={(e) => setNewMemberKana(e.target.value)} placeholder="ふりがな（例：くぼしおり）" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}
-                </div>
-
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-2">種類</label>
-                  <select value={typeSelect} onChange={(e) => handleTypeSelectChange(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
-                    <option value="__new__">＋ 新しく入力</option>
-                    {typeOptions.map((item) => <option key={item.type} value={item.type}>{item.type}</option>)}
-                  </select>
-
-                  {typeSelect === "__new__" && <input type="text" value={type} onChange={(e) => setType(e.target.value)} placeholder="種類名を入力" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-2">年</label>
-                    <select value={year} onChange={(e) => setYear(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
-                      {Array.from({ length: 16 }, (_, i) => 2026 - i).map((yearOption) => <option key={yearOption} value={String(yearOption)}>{yearOption}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-2">期生</label>
-                    <select value={generation} onChange={(e) => setGeneration(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
-                      {generationOptions.map((generationOption) => <option key={generationOption} value={generationOption}>{generationOption}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-2">コンプ種別</label>
-                  <select value={completeType} onChange={(e) => setCompleteType(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
-                    {completeTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">縦の段数</label>
+                <input type="number" min="1" value={gridRows} onChange={(e) => setGridRows(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3" />
               </div>
             </div>
 
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
-              <p className="text-sm text-zinc-400 mb-4">画像アップロード・全体切り出し</p>
-              <input type="file" accept="image/*" onChange={handleSourceImageChange} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm mb-4" />
+            {sourceImage && (
+              <div>
+                <div ref={imageAreaRef} className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800">
+                  <img src={sourceImage} alt="アップロード画像" onLoad={handleImageLoad} className="w-full block" draggable={false} />
+                  <div className="absolute border-[4px] border-cyan-400 pointer-events-none" style={{ left: `${cropBox.left}%`, top: `${cropBox.top}%`, width: `${cropBox.right - cropBox.left}%`, height: `${cropBox.bottom - cropBox.top}%` }} />
 
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-2">横の枚数</label>
-                  <input type="number" min="1" value={gridCols} onChange={(e) => setGridCols(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3" />
+                  <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-left" }); }} className="absolute top-0 bottom-0 w-5 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${cropBox.left}%` }} />
+                  <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-right" }); }} className="absolute top-0 bottom-0 w-5 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${cropBox.right}%` }} />
+                  <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-top" }); }} className="absolute left-0 right-0 h-5 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${cropBox.top}%` }} />
+                  <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-bottom" }); }} className="absolute left-0 right-0 h-5 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${cropBox.bottom}%` }} />
+
+                  {innerXLines.map((line, index) => {
+                    const absolute = absoluteXLine(line);
+                    return (
+                      <div key={`x-${index}`}>
+                        <div className="absolute top-0 bottom-0 w-[3px] bg-cyan-400 pointer-events-none" style={{ left: `${absolute}%` }} />
+                        <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "inner-x", index }); }} className="absolute top-0 bottom-0 w-5 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${absolute}%` }} />
+                      </div>
+                    );
+                  })}
+
+                  {innerYLines.map((line, index) => {
+                    const absolute = absoluteYLine(line);
+                    return (
+                      <div key={`y-${index}`}>
+                        <div className="absolute left-0 right-0 h-[3px] bg-cyan-400 pointer-events-none" style={{ top: `${absolute}%` }} />
+                        <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "inner-y", index }); }} className="absolute left-0 right-0 h-5 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${absolute}%` }} />
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-2">縦の段数</label>
-                  <input type="number" min="1" value={gridRows} onChange={(e) => setGridRows(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3" />
-                </div>
+                <p className="text-xs text-zinc-500 mt-3 leading-5">水色の外枠で全体範囲を調整し、内側の線でカード同士の境界を調整できます。</p>
+                {imageSize.width > 0 && imageSize.height > 0 && <p className="text-xs text-zinc-500 mt-1">元画像サイズ：{imageSize.width} × {imageSize.height}</p>}
               </div>
+            )}
 
-              {sourceImage && (
-                <div>
-                  <div ref={imageAreaRef} className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800">
-                    <img src={sourceImage} alt="アップロード画像" onLoad={handleImageLoad} className="w-full block" draggable={false} />
-                    <div className="absolute border-[4px] border-cyan-400 pointer-events-none" style={{ left: `${cropBox.left}%`, top: `${cropBox.top}%`, width: `${cropBox.right - cropBox.left}%`, height: `${cropBox.bottom - cropBox.top}%` }} />
-
-                    <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-left" }); }} className="absolute top-0 bottom-0 w-5 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${cropBox.left}%` }} />
-                    <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-right" }); }} className="absolute top-0 bottom-0 w-5 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${cropBox.right}%` }} />
-                    <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-top" }); }} className="absolute left-0 right-0 h-5 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${cropBox.top}%` }} />
-                    <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "box-bottom" }); }} className="absolute left-0 right-0 h-5 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${cropBox.bottom}%` }} />
-
-                    {innerXLines.map((line, index) => {
-                      const absolute = absoluteXLine(line);
-                      return (
-                        <div key={`x-${index}`}>
-                          <div className="absolute top-0 bottom-0 w-[3px] bg-cyan-400 pointer-events-none" style={{ left: `${absolute}%` }} />
-                          <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "inner-x", index }); }} className="absolute top-0 bottom-0 w-5 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${absolute}%` }} />
-                        </div>
-                      );
-                    })}
-
-                    {innerYLines.map((line, index) => {
-                      const absolute = absoluteYLine(line);
-                      return (
-                        <div key={`y-${index}`}>
-                          <div className="absolute left-0 right-0 h-[3px] bg-cyan-400 pointer-events-none" style={{ top: `${absolute}%` }} />
-                          <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget({ type: "inner-y", index }); }} className="absolute left-0 right-0 h-5 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${absolute}%` }} />
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <p className="text-xs text-zinc-500 mt-3 leading-5">水色の外枠で全体範囲を調整し、内側の線でカード同士の境界を調整できます。</p>
-                  {imageSize.width > 0 && imageSize.height > 0 && <p className="text-xs text-zinc-500 mt-1">元画像サイズ：{imageSize.width} × {imageSize.height}</p>}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3 mt-4">
-                <button type="button" onClick={resetCropBox} disabled={!sourceImage} className="w-full bg-zinc-800 disabled:bg-zinc-700 disabled:text-zinc-500 border border-zinc-700 text-zinc-200 rounded-2xl py-3 font-bold active:scale-[0.98] transition">枠をリセット</button>
-                <button type="button" onClick={cropByGrid} disabled={!sourceImage} className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition">{croppedItems.length > 0 ? "線を反映して再切り出し" : "切り出し"}</button>
-              </div>
-
-              {message && <p className="text-sm text-zinc-400 leading-6 mt-3">{message}</p>}
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <button type="button" onClick={resetCropBox} disabled={!sourceImage} className="w-full bg-zinc-800 disabled:bg-zinc-700 disabled:text-zinc-500 border border-zinc-700 text-zinc-200 rounded-2xl py-3 font-bold active:scale-[0.98] transition">枠をリセット</button>
+              <button type="button" onClick={cropByGrid} disabled={!sourceImage} className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition">{croppedItems.length > 0 ? "線を反映して再切り出し" : "切り出し"}</button>
             </div>
+
+            {message && <p className="text-sm text-zinc-400 leading-6 mt-3">{message}</p>}
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
+          <div ref={candidateAreaRef} className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4 scroll-mt-5">
             <div className="flex items-center justify-between gap-3 mb-4">
               <p className="text-sm text-zinc-400">切り出し候補</p>
               <p className="text-xs text-zinc-500">{croppedItems.length}件</p>
@@ -983,29 +942,80 @@ export default function PhotoBulkCropPage() {
                 )}
               </div>
             )}
-
-            {croppedItems.length > 0 && (
-              <div className="grid grid-cols-2 gap-3 mt-5">
-                <button
-                  type="button"
-                  onClick={() => handleSave({ continueRegister: false })}
-                  disabled={isSaving || selectedItems.length === 0}
-                  className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-sm md:text-lg active:scale-[0.98] transition"
-                >
-                  {isSaving ? "保存中..." : "保存して戻る"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSave({ continueRegister: true })}
-                  disabled={isSaving || selectedItems.length === 0}
-                  className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-sm md:text-lg active:scale-[0.98] transition"
-                >
-                  {isSaving ? "保存中..." : "連続して登録"}
-                </button>
-              </div>
-            )}
           </div>
+
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
+            <p className="text-sm text-zinc-400 mb-4">登録情報</p>
+
+            <div className="grid gap-3">
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">メンバー</label>
+                <select value={member} onChange={(e) => handleMemberChange(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
+                  <option value="">選択してください</option>
+                  {memberOptions.map((item) => <option key={item.member} value={item.member}>{item.member}</option>)}
+                  <option value="__new__">＋ 新しく追加</option>
+                </select>
+
+                {member === "__new__" && <input type="text" value={newMember} onChange={(e) => setNewMember(e.target.value)} placeholder="新しいメンバー名" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}
+                {member === "__new__" && <input type="text" value={newMemberKana} onChange={(e) => setNewMemberKana(e.target.value)} placeholder="ふりがな（例：くぼしおり）" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}
+              </div>
+
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">種類</label>
+                <select value={typeSelect} onChange={(e) => handleTypeSelectChange(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
+                  <option value="__new__">＋ 新しく入力</option>
+                  {typeOptions.map((item) => <option key={item.type} value={item.type}>{item.type}</option>)}
+                </select>
+
+                {typeSelect === "__new__" && <input type="text" value={type} onChange={(e) => setType(e.target.value)} placeholder="種類名を入力" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-2">年</label>
+                  <select value={year} onChange={(e) => setYear(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
+                    {Array.from({ length: 16 }, (_, i) => 2026 - i).map((yearOption) => <option key={yearOption} value={String(yearOption)}>{yearOption}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-2">期生</label>
+                  <select value={generation} onChange={(e) => setGeneration(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
+                    {generationOptions.map((generationOption) => <option key={generationOption} value={generationOption}>{generationOption}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">コンプ種別</label>
+                <select value={completeType} onChange={(e) => setCompleteType(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
+                  {completeTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {croppedItems.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleSave({ continueRegister: false })}
+                disabled={isSaving || selectedItems.length === 0}
+                className="w-full bg-white disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-sm md:text-lg active:scale-[0.98] transition"
+              >
+                {isSaving ? "保存中..." : "保存して戻る"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSave({ continueRegister: true })}
+                disabled={isSaving || selectedItems.length === 0}
+                className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-sm md:text-lg active:scale-[0.98] transition"
+              >
+                {isSaving ? "保存中..." : "連続して登録"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </main>

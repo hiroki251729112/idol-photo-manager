@@ -12,6 +12,7 @@ export default function PhotoListPage() {
   const [type, setType] = useState("");
   const [year, setYear] = useState("");
   const [group, setGroup] = useState("");
+  const [returnMode, setReturnMode] = useState("");
 
   const [photos, setPhotos] = useState([]);
   const [sortType, setSortType] = useState("new");
@@ -78,11 +79,19 @@ export default function PhotoListPage() {
     const selectedMember = params.get("member") || "";
     const selectedType = params.get("type") || "";
     const selectedYear = params.get("year") || "";
+    const selectedMode = params.get("mode") || "";
 
     setGroup(selectedGroup);
     setMember(selectedMember);
     setType(selectedType);
     setYear(selectedYear);
+    setReturnMode(
+      selectedMode === "member" || selectedMode === "type"
+        ? selectedMode
+        : selectedMember
+        ? "member"
+        : "type"
+    );
 
     const loadMemberImage = async () => {
       if (!selectedMember || !selectedGroup) return;
@@ -261,6 +270,7 @@ export default function PhotoListPage() {
     if (item.member) params.set("member", item.member);
     if (item.type) params.set("type", item.type);
     if (item.year) params.set("year", item.year);
+    params.set("mode", returnMode || (member ? "member" : "type"));
 
     const firstPhoto = item.photos[0];
 
@@ -420,7 +430,7 @@ export default function PhotoListPage() {
     <main className="min-h-screen bg-black text-white px-4 py-5 overflow-x-hidden">
       <div className="w-full max-w-md md:max-w-4xl lg:max-w-6xl mx-auto min-w-0">
         <Link
-          href={`/select?group=${encodeURIComponent(group)}`}
+          href={`/select?group=${encodeURIComponent(group)}&mode=${returnMode || (member ? "member" : "type")}`}
           className="text-cyan-400 text-sm"
         >
           ← 戻る

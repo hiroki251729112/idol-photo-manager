@@ -77,10 +77,12 @@ export default function SelectPage() {
 
   useEffect(() => {
     let selectedGroup = "";
+    let selectedMode = "";
 
     const loadBaseSettings = async () => {
       const params = new URLSearchParams(window.location.search);
       selectedGroup = params.get("group") || "";
+      selectedMode = params.get("mode") || "";
 
       setGroup(selectedGroup);
 
@@ -105,7 +107,11 @@ export default function SelectPage() {
       }
 
       const savedViewMode = localStorage.getItem("photoViewMode");
-      if (savedViewMode === "type" || savedViewMode === "member") {
+
+      if (selectedMode === "type" || selectedMode === "member") {
+        setViewMode(selectedMode);
+        localStorage.setItem("photoViewMode", selectedMode);
+      } else if (savedViewMode === "type" || savedViewMode === "member") {
         setViewMode(savedViewMode);
       }
     };
@@ -589,7 +595,7 @@ export default function SelectPage() {
                     key={`${item.year}-${item.type}`}
                     href={`/photo-list?group=${encodeURIComponent(
                       group
-                    )}&type=${encodeURIComponent(item.type)}&year=${item.year}`}
+                    )}&type=${encodeURIComponent(item.type)}&year=${item.year}&mode=type`}
                     className="bg-zinc-900 border border-zinc-700 rounded-3xl p-3"
                   >
                     {item.image ? (
@@ -622,7 +628,7 @@ export default function SelectPage() {
                     key={`${item.year}-${item.type}`}
                     href={`/photo-list?group=${encodeURIComponent(
                       group
-                    )}&type=${encodeURIComponent(item.type)}&year=${item.year}`}
+                    )}&type=${encodeURIComponent(item.type)}&year=${item.year}&mode=type`}
                     className="block border-b border-zinc-800 py-3"
                   >
                     <p className="font-bold text-lg leading-tight">
@@ -677,7 +683,7 @@ export default function SelectPage() {
                     key={item.member}
                     href={`/photo-list?group=${encodeURIComponent(
                       group
-                    )}&member=${encodeURIComponent(item.member)}`}
+                    )}&member=${encodeURIComponent(item.member)}&mode=member`}
                     className="bg-zinc-900 border border-zinc-700 rounded-3xl p-3"
                   >
                     {item.image ? (
@@ -712,7 +718,7 @@ export default function SelectPage() {
                     key={item.member}
                     href={`/photo-list?group=${encodeURIComponent(
                       group
-                    )}&member=${encodeURIComponent(item.member)}`}
+                    )}&member=${encodeURIComponent(item.member)}&mode=member`}
                     className="block border-b border-zinc-800 py-3"
                   >
                     <p className="font-bold text-lg leading-tight">

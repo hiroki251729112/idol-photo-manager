@@ -5,6 +5,12 @@ import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { deleteUserPhoto, getUserPhotos, saveUserPhotos } from "@/lib/photoService";
+import {
+  deleteMemberImage as deleteIndexedDbMemberImage,
+  deletePhotoImagesForMember,
+  migrateMemberImageName,
+  migratePhotoImagesForMemberRename,
+} from "@/lib/imageDb";
 
 export default function DetailEditMemberPage() {
   const [user, setUser] = useState(null);
@@ -86,7 +92,7 @@ export default function DetailEditMemberPage() {
       status: photo.status || "所持",
       count: Number(photo.count || 0),
       imageUrl: photo.imageUrl || "",
-      hasLocalImage: Boolean(photo.image),
+      hasIndexedDbImage: Boolean(photo.hasIndexedDbImage || photo.hasLocalImage || photo.image),
     };
   };
 
@@ -200,11 +206,11 @@ export default function DetailEditMemberPage() {
     }
   };
 
-  const syncMemberImageName = (oldName, nextName) => {
+  const syncLocalStorageMemberImageName = (oldName, nextName) => {
     const savedMemberImages =
       JSON.parse(localStorage.getItem(`memberImages_${group}`)) || {};
 
-    if (savedMemberImages[oldName] && !savedMemberImages[nextName]) {
+    if (savedMemberImages[oldName]) {
       savedMemberImages[nextName] = savedMemberImages[oldName];
       delete savedMemberImages[oldName];
 
@@ -215,7 +221,7 @@ export default function DetailEditMemberPage() {
     }
   };
 
-  const deleteMemberImage = (memberName) => {
+  const deleteLocalStorageMemberImage = (memberName) => {
     const savedMemberImages =
       JSON.parse(localStorage.getItem(`memberImages_${group}`)) || {};
 
@@ -246,27 +252,47 @@ export default function DetailEditMemberPage() {
 
     const nextName = newMemberName.trim();
 
-    const confirmUpdate = window.confirm(
-      `${targetMemberForName} を「${nextName}」に一括変更しますか？`
+    if (targetMemberForName === nextName) {
+      alert("変更前と同じメンバー名です");
+      return;
+    }
+
+    const duplicateMemberExists = memberOptions.some(
+      (item) => item.member === nextName && item.member !== targetMemberForName
     );
+
+    const confirmText = duplicateMemberExists
+      ? `${targetMemberForName} を既存の「${nextName}」に統合しますか？\n同じ種類・年・ポーズがある場合はデータがまとまります。`
+      : `${targetMemberForName} を「${nextName}」に一括変更しますか？`;
+
+    const confirmUpdate = window.confirm(confirmText);
 
     if (!confirmUpdate) return;
 
     try {
       setIsSaving(true);
 
+      await migratePhotoImagesForMemberRename(
+        group,
+        targetMemberForName,
+        nextName,
+        photos
+      );
+
+      await migrateMemberImageName(group, targetMemberForName, nextName);
+      syncLocalStorageMemberImageName(targetMemberForName, nextName);
+
       const updatedPhotos = photos.map((photo) => {
         if (photo.group === group && photo.member === targetMemberForName) {
           return {
             ...photo,
             member: nextName,
+            hasIndexedDbImage: Boolean(photo.hasIndexedDbImage || photo.hasLocalImage || photo.image),
           };
         }
 
         return photo;
       });
-
-      syncMemberImageName(targetMemberForName, nextName);
 
       await savePhotos(updatedPhotos);
       setTargetMemberForName("");
@@ -405,12 +431,14 @@ export default function DetailEditMemberPage() {
         (photo) => photo.group === group && photo.member === targetMemberForDelete
       );
 
+      await deletePhotoImagesForMember(group, targetMemberForDelete, photos);
+      await deleteIndexedDbMemberImage(group, targetMemberForDelete);
+      deleteLocalStorageMemberImage(targetMemberForDelete);
+
       const updatedPhotos = photos.filter(
         (photo) =>
           !(photo.group === group && photo.member === targetMemberForDelete)
       );
-
-      deleteMemberImage(targetMemberForDelete);
 
       localStorage.setItem("photos", JSON.stringify(updatedPhotos));
       setPhotos(updatedPhotos);
@@ -467,7 +495,7 @@ export default function DetailEditMemberPage() {
           <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
             <h2 className="text-xl font-bold mb-2">メンバー名を一括変更</h2>
             <p className="text-sm text-zinc-400 mb-4">
-              名前を間違えて登録したときに、すべてのデータをまとめて変更します。
+              名前を間違えて登録したときに、画像の紐づけも含めてすべてのデータをまとめて変更します。
             </p>
 
             <select
@@ -594,7 +622,7 @@ export default function DetailEditMemberPage() {
               メンバーを削除
             </h2>
             <p className="text-sm text-zinc-400 mb-4">
-              間違って登録したメンバーと、そのメンバーに紐づく生写真データを完全に削除します。
+              間違って登録したメンバーと、そのメンバーに紐づく生写真データ・画像を完全に削除します。
             </p>
 
             <select

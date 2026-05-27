@@ -5,6 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { deleteUserPhoto, getUserPhotos, saveUserPhotos } from "@/lib/photoService";
+import {
+  deletePhotoImagesForType,
+  migratePhotoImagesForTypeRename,
+} from "@/lib/imageDb";
 
 export default function DetailEditTypePage() {
   const [user, setUser] = useState(null);
@@ -64,7 +68,7 @@ export default function DetailEditTypePage() {
       status: photo.status || "所持",
       count: Number(photo.count || 0),
       imageUrl: photo.imageUrl || "",
-      hasLocalImage: Boolean(photo.image),
+      hasIndexedDbImage: Boolean(photo.hasIndexedDbImage || photo.hasLocalImage || photo.image),
     };
   };
 
@@ -175,20 +179,39 @@ export default function DetailEditTypePage() {
 
     const nextTypeName = newTypeName.trim();
 
-    const confirmUpdate = window.confirm(
-      `${targetTypeForRename} を「${nextTypeName}」に一括変更しますか？`
+    if (targetTypeForRename === nextTypeName) {
+      alert("変更前と同じ種類名です");
+      return;
+    }
+
+    const duplicateTypeExists = typeOptions.some(
+      (item) => item.type === nextTypeName && item.type !== targetTypeForRename
     );
+
+    const confirmText = duplicateTypeExists
+      ? `${targetTypeForRename} を既存の「${nextTypeName}」に統合しますか？\n同じメンバー・年・ポーズがある場合はデータがまとまります。`
+      : `${targetTypeForRename} を「${nextTypeName}」に一括変更しますか？`;
+
+    const confirmUpdate = window.confirm(confirmText);
 
     if (!confirmUpdate) return;
 
     try {
       setIsSaving(true);
 
+      await migratePhotoImagesForTypeRename(
+        group,
+        targetTypeForRename,
+        nextTypeName,
+        photos
+      );
+
       const updatedPhotos = photos.map((photo) => {
         if (photo.group === group && photo.type === targetTypeForRename) {
           return {
             ...photo,
             type: nextTypeName,
+            hasIndexedDbImage: Boolean(photo.hasIndexedDbImage || photo.hasLocalImage || photo.image),
           };
         }
 
@@ -239,6 +262,8 @@ export default function DetailEditTypePage() {
       const deleteTargets = photos.filter(
         (photo) => photo.group === group && photo.type === targetTypeForDelete
       );
+
+      await deletePhotoImagesForType(group, targetTypeForDelete, photos);
 
       const updatedPhotos = photos.filter(
         (photo) => !(photo.group === group && photo.type === targetTypeForDelete)
@@ -304,7 +329,7 @@ export default function DetailEditTypePage() {
             <h2 className="text-xl font-bold mb-2">種類名を一括変更</h2>
 
             <p className="text-sm text-zinc-400 mb-4">
-              種類名を間違えて登録したときに、すべてのデータをまとめて変更します。
+              種類名を間違えて登録したときに、画像の紐づけも含めてまとめて変更します。
             </p>
 
             <select
@@ -355,7 +380,7 @@ export default function DetailEditTypePage() {
             </h2>
 
             <p className="text-sm text-zinc-400 mb-4">
-              間違って登録した種類と、その種類に紐づく生写真データを完全に削除します。
+              間違って登録した種類と、その種類に紐づく生写真データ・画像を完全に削除します。
             </p>
 
             <select

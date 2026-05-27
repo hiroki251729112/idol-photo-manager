@@ -120,6 +120,113 @@ export const deletePhotoImage = async (photo) => {
   );
 };
 
+const migratePhotoImageId = async (oldPhoto, nextPhoto) => {
+  const oldId = makePhotoImageId(oldPhoto);
+  const nextId = makePhotoImageId(nextPhoto);
+
+  if (!oldId || !nextId || oldId === nextId) return;
+
+  const db = await openImageDatabase();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(IMAGE_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(IMAGE_STORE_NAME);
+    const getRequest = store.get(oldId);
+
+    getRequest.onsuccess = () => {
+      const oldItem = getRequest.result;
+
+      if (!oldItem?.image) return;
+
+      store.put({
+        ...oldItem,
+        id: nextId,
+        updatedAt: Date.now(),
+      });
+
+      store.delete(oldId);
+    };
+
+    getRequest.onerror = () => {
+      reject(getRequest.error);
+    };
+
+    transaction.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
+};
+
+export const migratePhotoImagesForTypeRename = async (
+  group,
+  oldType,
+  nextType,
+  photos = []
+) => {
+  if (!group || !oldType || !nextType || oldType === nextType) return;
+
+  const targets = photos.filter(
+    (photo) => photo.group === group && photo.type === oldType
+  );
+
+  await Promise.all(
+    targets.map((photo) =>
+      migratePhotoImageId(photo, {
+        ...photo,
+        type: nextType,
+      })
+    )
+  );
+};
+
+export const migratePhotoImagesForMemberRename = async (
+  group,
+  oldMember,
+  nextMember,
+  photos = []
+) => {
+  if (!group || !oldMember || !nextMember || oldMember === nextMember) return;
+
+  const targets = photos.filter(
+    (photo) => photo.group === group && photo.member === oldMember
+  );
+
+  await Promise.all(
+    targets.map((photo) =>
+      migratePhotoImageId(photo, {
+        ...photo,
+        member: nextMember,
+      })
+    )
+  );
+};
+
+export const deletePhotoImagesForType = async (group, type, photos = []) => {
+  if (!group || !type) return;
+
+  const targets = photos.filter(
+    (photo) => photo.group === group && photo.type === type
+  );
+
+  await Promise.all(targets.map((photo) => deletePhotoImage(photo)));
+};
+
+export const deletePhotoImagesForMember = async (group, member, photos = []) => {
+  if (!group || !member) return;
+
+  const targets = photos.filter(
+    (photo) => photo.group === group && photo.member === member
+  );
+
+  await Promise.all(targets.map((photo) => deletePhotoImage(photo)));
+};
+
 export const saveMemberImage = async (group, member, imageData) => {
   if (!imageData) return;
 
@@ -188,6 +295,51 @@ export const deleteMemberImage = async (group, member) => {
   await runStoreOperation(MEMBER_IMAGE_STORE_NAME, "readwrite", (store) =>
     store.delete(id)
   );
+};
+
+export const migrateMemberImageName = async (group, oldMember, nextMember) => {
+  if (!group || !oldMember || !nextMember || oldMember === nextMember) return;
+
+  const oldId = makeMemberImageId(group, oldMember);
+  const nextId = makeMemberImageId(group, nextMember);
+
+  const db = await openImageDatabase();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(MEMBER_IMAGE_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(MEMBER_IMAGE_STORE_NAME);
+    const getRequest = store.get(oldId);
+
+    getRequest.onsuccess = () => {
+      const oldItem = getRequest.result;
+
+      if (!oldItem?.image) return;
+
+      store.put({
+        ...oldItem,
+        id: nextId,
+        group,
+        member: nextMember,
+        updatedAt: Date.now(),
+      });
+
+      store.delete(oldId);
+    };
+
+    getRequest.onerror = () => {
+      reject(getRequest.error);
+    };
+
+    transaction.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
 };
 
 export const exportAllImages = async () => {
