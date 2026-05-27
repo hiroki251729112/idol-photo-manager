@@ -17,24 +17,18 @@ function CountSelector({ value, onChange, allowZero = false }) {
       <select
         value={isCustom ? "__custom__" : value || ""}
         onChange={(e) => {
-          if (e.target.value === "__custom__") {
-            onChange("11");
-          } else {
-            onChange(e.target.value);
-          }
+          if (e.target.value === "__custom__") onChange("11");
+          else onChange(e.target.value);
         }}
         className="w-full min-w-0 max-w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm"
       >
         <option value="">枚数選択</option>
-
         {allowZero && <option value="0">0枚</option>}
-
         {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
           <option key={num} value={String(num)}>
             {num}枚
           </option>
         ))}
-
         <option value="__custom__">枚数入力</option>
       </select>
 
@@ -78,51 +72,77 @@ export default function PhotoEditPage() {
   const [memberKana, setMemberKana] = useState("");
   const [type, setType] = useState("");
   const [completeType, setCompleteType] = useState("4");
+  const [poseSetNames, setPoseSetNames] = useState([""]);
 
   const [normalPoseCounts, setNormalPoseCounts] = useState({});
   const [normalPoseImages, setNormalPoseImages] = useState({});
   const [normalPoseExistingIds, setNormalPoseExistingIds] = useState({});
 
-  const [otherPoses, setOtherPoses] = useState([
-    { id: null, name: "", count: "", image: "" },
-  ]);
+  const [otherPoses, setOtherPoses] = useState([{ id: null, name: "", count: "", image: "" }]);
 
   const [cropTarget, setCropTarget] = useState(null);
   const [cropImageSize, setCropImageSize] = useState({ width: 0, height: 0 });
   const [cropBox, setCropBox] = useState({ left: 5, top: 5, right: 95, bottom: 95 });
   const [dragTarget, setDragTarget] = useState(null);
 
+  const basePoseList = ["ヨリ", "チュウ", "ヒキ", "座り"];
+  const allStandardPoseList = ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
+  const isCustomCompleteType = completeType === "custom";
+  const actualCompleteType = isCustomCompleteType ? String(poseSetNames.length * 4) : completeType;
+
   const completeTypeOptions = useMemo(() => {
+    const common = [
+      { value: "custom", label: "〇種類コンプ" },
+      { value: "other", label: "その他" },
+    ];
+
     if (group === "乃木坂46") {
       return [
         { value: "3", label: "3種コンプ" },
         { value: "5", label: "5種コンプ" },
-        { value: "other", label: "その他" },
+        ...common,
       ];
     }
 
-    return [
-      { value: "4", label: "4種コンプ" },
-      { value: "other", label: "その他" },
-    ];
+    return [{ value: "4", label: "4種コンプ" }, ...common];
   }, [group]);
 
   const getDefaultCompleteType = (targetGroup) => {
     return targetGroup === "乃木坂46" ? "3" : "4";
   };
 
+  const buildCustomPoseName = (basePose, setName) => {
+    const trimmedName = String(setName || "").trim();
+    if (!trimmedName) return basePose;
+    return `${basePose}（${trimmedName}）`;
+  };
+
+  const getPoseBase = (pose) => {
+    const match = String(pose || "").match(/^(.+?)（(.+)）$/);
+    return match ? match[1] : pose;
+  };
+
+  const getPoseSetName = (pose) => {
+    const match = String(pose || "").match(/^(.+?)（(.+)）$/);
+    return match ? match[2] : "";
+  };
+
   const getNormalPoseList = (targetCompleteType) => {
+    if (targetCompleteType === "custom") {
+      return poseSetNames.flatMap((setName) =>
+        basePoseList.map((pose) => buildCustomPoseName(pose, setName))
+      );
+    }
+
     if (targetCompleteType === "3") return ["ヨリ", "チュウ", "ヒキ"];
     if (targetCompleteType === "4") return ["ヨリ", "チュウ", "ヒキ", "座り"];
     if (targetCompleteType === "5") return ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
-    return ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
+    return [];
   };
 
   const normalPoseList = useMemo(() => {
     return getNormalPoseList(completeType);
-  }, [completeType]);
-
-  const allStandardPoseList = ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
+  }, [completeType, poseSetNames]);
 
   useEffect(() => {
     if (!dragTarget) return;
@@ -134,18 +154,10 @@ export default function PhotoEditPage() {
       const xPercent = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
       const yPercent = Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100));
 
-      if (dragTarget === "left") {
-        setCropBox((prev) => ({ ...prev, left: Math.min(xPercent, prev.right - 2) }));
-      }
-      if (dragTarget === "right") {
-        setCropBox((prev) => ({ ...prev, right: Math.max(xPercent, prev.left + 2) }));
-      }
-      if (dragTarget === "top") {
-        setCropBox((prev) => ({ ...prev, top: Math.min(yPercent, prev.bottom - 2) }));
-      }
-      if (dragTarget === "bottom") {
-        setCropBox((prev) => ({ ...prev, bottom: Math.max(yPercent, prev.top + 2) }));
-      }
+      if (dragTarget === "left") setCropBox((prev) => ({ ...prev, left: Math.min(xPercent, prev.right - 2) }));
+      if (dragTarget === "right") setCropBox((prev) => ({ ...prev, right: Math.max(xPercent, prev.left + 2) }));
+      if (dragTarget === "top") setCropBox((prev) => ({ ...prev, top: Math.min(yPercent, prev.bottom - 2) }));
+      if (dragTarget === "bottom") setCropBox((prev) => ({ ...prev, bottom: Math.max(yPercent, prev.top + 2) }));
     };
 
     const handlePointerUp = () => setDragTarget(null);
@@ -174,16 +186,12 @@ export default function PhotoEditPage() {
 
     return firestorePhotos.map((photo) => {
       const localPhoto = localMap.get(getPhotoKey(photo));
-
-      return {
-        ...photo,
-        image: localPhoto?.image || photo.image || "",
-      };
+      return { ...photo, image: localPhoto?.image || photo.image || "" };
     });
   };
 
   const attachIndexedDbImages = async (targetPhotos) => {
-    const photosWithImages = await Promise.all(
+    return await Promise.all(
       targetPhotos.map(async (photo) => {
         if (photo.image) return photo;
 
@@ -196,8 +204,6 @@ export default function PhotoEditPage() {
         }
       })
     );
-
-    return photosWithImages;
   };
 
   const removeImageForFirestore = (photo) => {
@@ -241,7 +247,6 @@ export default function PhotoEditPage() {
         if (photo.hasIndexedDbImage) normalizedPhotos[existingIndex].hasIndexedDbImage = true;
       } else {
         const { image, ...photoWithoutImage } = photo;
-
         normalizedPhotos.push({
           ...photoWithoutImage,
           id: String(photo.id || photo.firestoreId || Date.now() + Math.random()),
@@ -260,6 +265,7 @@ export default function PhotoEditPage() {
     if (returnMember || member) urlParams.set("member", returnMember || member);
     if (returnType || type) urlParams.set("type", returnType || type);
     if (returnYear || year) urlParams.set("year", returnYear || year);
+    urlParams.set("mode", returnMember || member ? "member" : "type");
     const query = urlParams.toString();
     return query ? `/photo-detail/${params.id}?${query}` : `/photo-detail/${params.id}`;
   };
@@ -270,6 +276,7 @@ export default function PhotoEditPage() {
     if (member) urlParams.set("member", member);
     if (type) urlParams.set("type", type);
     if (year) urlParams.set("year", year);
+    urlParams.set("mode", member ? "member" : "type");
     const query = urlParams.toString();
     return query ? `/photo-detail/${targetId}?${query}` : `/photo-detail/${targetId}`;
   };
@@ -308,13 +315,34 @@ export default function PhotoEditPage() {
     );
 
     const firstPhoto = targetGroupPhotos[0] || targetPhoto;
+    const firstCompleteType = firstPhoto?.completeType || getDefaultCompleteType(fixedGroup);
+    const shouldUseCustom = Number(firstCompleteType || 0) > 5;
 
     if (firstPhoto) {
       setGeneration(firstPhoto.generation || "1期生");
       setMemberKana(firstPhoto.memberKana || "");
-      setCompleteType(firstPhoto.completeType || getDefaultCompleteType(fixedGroup));
+      setCompleteType(shouldUseCustom ? "custom" : firstCompleteType);
     } else {
       setCompleteType(getDefaultCompleteType(fixedGroup));
+    }
+
+    const inferredSetNames = [];
+
+    targetGroupPhotos.forEach((photo) => {
+      const setName = getPoseSetName(photo.pose);
+      const basePose = getPoseBase(photo.pose);
+
+      if (setName && basePoseList.includes(basePose) && !inferredSetNames.includes(setName)) {
+        inferredSetNames.push(setName);
+      }
+    });
+
+    if (shouldUseCustom) {
+      const rowCount = Math.max(1, Math.ceil(Number(firstCompleteType || 4) / 4));
+      const names = Array.from({ length: rowCount }, (_, index) => inferredSetNames[index] || "");
+      setPoseSetNames(names);
+    } else {
+      setPoseSetNames([""]);
     }
 
     const countMap = {};
@@ -324,8 +352,11 @@ export default function PhotoEditPage() {
 
     targetGroupPhotos.forEach((photo) => {
       const photoId = String(photo.id || photo.firestoreId || Date.now() + Math.random());
+      const basePose = getPoseBase(photo.pose);
+      const setName = getPoseSetName(photo.pose);
+      const isCustomPose = shouldUseCustom && setName && basePoseList.includes(basePose);
 
-      if (allStandardPoseList.includes(photo.pose)) {
+      if (allStandardPoseList.includes(photo.pose) || isCustomPose) {
         countMap[photo.pose] = String(photo.count ?? "");
         imageMap[photo.pose] = photo.image || "";
         idMap[photo.pose] = photoId;
@@ -383,23 +414,25 @@ export default function PhotoEditPage() {
     return () => unsubscribe();
   }, [params.id]);
 
+  const handleCompleteTypeChange = (value) => {
+    setCompleteType(value);
+    if (value === "custom" && poseSetNames.length === 0) setPoseSetNames([""]);
+  };
+
+  const addPoseSetName = () => setPoseSetNames((prev) => [...prev, ""]);
+  const updatePoseSetName = (index, value) => setPoseSetNames((prev) => prev.map((name, i) => (i === index ? value : name)));
+  const removePoseSetName = (index) => setPoseSetNames((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+
   const handleNormalPoseCountChange = (pose, value) => {
     setNormalPoseCounts((prev) => ({ ...prev, [pose]: value }));
   };
 
   const handleOtherPoseChange = (index, field, value) => {
     setOtherPoses((prev) => {
-      const updated = prev.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, [field]: value } : item
-      );
-
+      const updated = prev.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
       const lastItem = updated[updated.length - 1];
 
-      if (
-        lastItem &&
-        (lastItem.name.trim() || lastItem.count || lastItem.image) &&
-        updated.length < 20
-      ) {
+      if (lastItem && (lastItem.name.trim() || lastItem.count || lastItem.image) && updated.length < 20) {
         return [...updated, { id: null, name: "", count: "", image: "" }];
       }
 
@@ -412,16 +445,8 @@ export default function PhotoEditPage() {
     setCropImageSize({ width: 0, height: 0 });
     setCropBox({ left: 5, top: 5, right: 95, bottom: 95 });
 
-    const editorId =
-      kind === "normal"
-        ? `photo-edit-crop-editor-normal-${pose}`
-        : `photo-edit-crop-editor-other-${index}`;
-
-    setTimeout(() => {
-      document
-        .getElementById(editorId)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
+    const editorId = kind === "normal" ? `photo-edit-crop-editor-normal-${pose}` : `photo-edit-crop-editor-other-${index}`;
+    setTimeout(() => document.getElementById(editorId)?.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
   };
 
   const handleNormalPoseImageChange = (pose, e) => {
@@ -429,9 +454,7 @@ export default function PhotoEditPage() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onloadend = () => {
-      openCropEditor({ kind: "normal", pose, index: null, sourceImage: reader.result });
-    };
+    reader.onloadend = () => openCropEditor({ kind: "normal", pose, index: null, sourceImage: reader.result });
     reader.readAsDataURL(file);
     e.target.value = "";
   };
@@ -441,9 +464,7 @@ export default function PhotoEditPage() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onloadend = () => {
-      openCropEditor({ kind: "other", pose: "その他", index, sourceImage: reader.result });
-    };
+    reader.onloadend = () => openCropEditor({ kind: "other", pose: "その他", index, sourceImage: reader.result });
     reader.readAsDataURL(file);
     e.target.value = "";
   };
@@ -463,17 +484,14 @@ export default function PhotoEditPage() {
         const sy = Math.round((cropBox.top / 100) * img.naturalHeight);
         const sw = Math.round(((cropBox.right - cropBox.left) / 100) * img.naturalWidth);
         const sh = Math.round(((cropBox.bottom - cropBox.top) / 100) * img.naturalHeight);
-
         const safeWidth = Math.max(1, Math.min(sw, img.naturalWidth - sx));
         const safeHeight = Math.max(1, Math.min(sh, img.naturalHeight - sy));
 
         const canvas = document.createElement("canvas");
         canvas.width = safeWidth;
         canvas.height = safeHeight;
-
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, sx, sy, safeWidth, safeHeight, 0, 0, safeWidth, safeHeight);
-
         resolve(canvas.toDataURL("image/jpeg", 0.92));
       };
 
@@ -503,14 +521,8 @@ export default function PhotoEditPage() {
   const handleUseOriginalImage = () => {
     if (!cropTarget?.sourceImage) return;
 
-    if (cropTarget.kind === "normal") {
-      setNormalPoseImages((prev) => ({ ...prev, [cropTarget.pose]: cropTarget.sourceImage }));
-    }
-
-    if (cropTarget.kind === "other") {
-      handleOtherPoseChange(cropTarget.index, "image", cropTarget.sourceImage);
-    }
-
+    if (cropTarget.kind === "normal") setNormalPoseImages((prev) => ({ ...prev, [cropTarget.pose]: cropTarget.sourceImage }));
+    if (cropTarget.kind === "other") handleOtherPoseChange(cropTarget.index, "image", cropTarget.sourceImage);
     setCropTarget(null);
   };
 
@@ -531,14 +543,9 @@ export default function PhotoEditPage() {
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
             <h2 className="text-lg font-bold">画像調整</h2>
-            <p className="text-sm text-zinc-400 mt-1 leading-6">
-              水色の枠線をドラッグして、保存したい範囲を調整してください。
-            </p>
+            <p className="text-sm text-zinc-400 mt-1 leading-6">水色の枠線をドラッグして、保存したい範囲を調整してください。</p>
           </div>
-
-          <button type="button" onClick={handleCancelCrop} className="text-zinc-400 text-sm shrink-0">
-            閉じる
-          </button>
+          <button type="button" onClick={handleCancelCrop} className="text-zinc-400 text-sm shrink-0">閉じる</button>
         </div>
 
         <div ref={cropAreaRef} className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800">
@@ -549,71 +556,38 @@ export default function PhotoEditPage() {
             className="w-full block"
             draggable={false}
           />
-
           <div
             className="absolute border-[4px] border-cyan-400 pointer-events-none"
-            style={{
-              left: `${cropBox.left}%`,
-              top: `${cropBox.top}%`,
-              width: `${cropBox.right - cropBox.left}%`,
-              height: `${cropBox.bottom - cropBox.top}%`,
-            }}
+            style={{ left: `${cropBox.left}%`, top: `${cropBox.top}%`, width: `${cropBox.right - cropBox.left}%`, height: `${cropBox.bottom - cropBox.top}%` }}
           />
-
           <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget("left"); }} className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${cropBox.left}%` }} />
           <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget("right"); }} className="absolute top-0 bottom-0 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent" style={{ left: `${cropBox.right}%` }} />
           <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget("top"); }} className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${cropBox.top}%` }} />
           <button type="button" onPointerDown={(e) => { e.preventDefault(); setDragTarget("bottom"); }} className="absolute left-0 right-0 h-8 -translate-y-1/2 cursor-ns-resize bg-transparent" style={{ top: `${cropBox.bottom}%` }} />
         </div>
 
-        {cropImageSize.width > 0 && cropImageSize.height > 0 && (
-          <p className="text-xs text-zinc-500 mt-2">
-            元画像サイズ：{cropImageSize.width} × {cropImageSize.height}
-          </p>
-        )}
+        {cropImageSize.width > 0 && cropImageSize.height > 0 && <p className="text-xs text-zinc-500 mt-2">元画像サイズ：{cropImageSize.width} × {cropImageSize.height}</p>}
 
         <div className="grid grid-cols-2 gap-3 mt-4">
-          <button type="button" onClick={() => setCropBox({ left: 5, top: 5, right: 95, bottom: 95 })} className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-2xl py-3 font-bold active:scale-[0.98] transition">
-            枠をリセット
-          </button>
-
-          <button type="button" onClick={handleApplyCrop} className="bg-cyan-500 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition">
-            この範囲で切り出す
-          </button>
+          <button type="button" onClick={() => setCropBox({ left: 5, top: 5, right: 95, bottom: 95 })} className="bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-2xl py-3 font-bold active:scale-[0.98] transition">枠をリセット</button>
+          <button type="button" onClick={handleApplyCrop} className="bg-cyan-500 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition">この範囲で切り出す</button>
         </div>
 
-        <button type="button" onClick={handleUseOriginalImage} className="w-full bg-white text-black border border-white rounded-2xl py-3 font-bold mt-3 active:scale-[0.98] transition">
-          調整せず元画像を使う
-        </button>
+        <button type="button" onClick={handleUseOriginalImage} className="w-full bg-white text-black border border-white rounded-2xl py-3 font-bold mt-3 active:scale-[0.98] transition">調整せず元画像を使う</button>
       </div>
     );
   };
 
   const buildUpdates = () => {
-    const visibleStandardPoses = getNormalPoseList(completeType);
-    const hiddenStandardPoses = allStandardPoseList.filter((pose) => !visibleStandardPoses.includes(pose));
+    const visiblePoseList = getNormalPoseList(completeType);
 
-    const hiddenHasCount = hiddenStandardPoses.some((pose) => Number(normalPoseCounts[pose] || 0) > 0);
-
-    if (hiddenHasCount) {
-      const confirmHiddenReset = window.confirm(
-        "選択したコンプ種別では表示されないポーズに枚数が登録されています。対象外のポーズを0枚にして保存しますか？"
-      );
-
-      if (!confirmHiddenReset) return null;
-    }
-
-    const normalPoseUpdates = allStandardPoseList
-      .map((pose) => {
-        const isVisible = visibleStandardPoses.includes(pose);
-
-        return {
-          id: normalPoseExistingIds[pose] || null,
-          pose,
-          count: isVisible ? (normalPoseCounts[pose] === "" || normalPoseCounts[pose] == null ? 0 : Number(normalPoseCounts[pose])) : 0,
-          image: normalPoseImages[pose] || "",
-        };
-      })
+    const normalPoseUpdates = visiblePoseList
+      .map((pose) => ({
+        id: normalPoseExistingIds[pose] || null,
+        pose,
+        count: normalPoseCounts[pose] === "" || normalPoseCounts[pose] == null ? 0 : Number(normalPoseCounts[pose]),
+        image: normalPoseImages[pose] || "",
+      }))
       .filter((item) => item.id || item.count > 0 || item.image);
 
     const filledOtherPoses = otherPoses.filter((item) => item.id || item.name.trim() || item.count || item.image);
@@ -649,23 +623,15 @@ export default function PhotoEditPage() {
     let firstSavedId = String(params.id);
 
     const updatedPhotos = sourcePhotos.map((photo) => {
-      const isOriginalGroup =
-        photo.group === originalGroup &&
-        photo.member === originalMember &&
-        photo.type === originalType &&
-        photo.year === originalYear;
-
+      const isOriginalGroup = photo.group === originalGroup && photo.member === originalMember && photo.type === originalType && photo.year === originalYear;
       if (!isOriginalGroup) return photo;
 
       const photoId = String(photo.id || photo.firestoreId || "");
-
       const updateById = updates.find((item) => item.id && String(item.id) === photoId);
       const updateByPose = updates.find((item) => !item.id && item.pose === photo.pose);
       const updateItem = updateById || updateByPose;
 
-      if (!updateItem) {
-        return { ...photo, year, completeType, status: "所持" };
-      }
+      if (!updateItem) return { ...photo, year, completeType: actualCompleteType, status: "所持" };
 
       return {
         ...photo,
@@ -676,7 +642,7 @@ export default function PhotoEditPage() {
         member,
         memberKana,
         type,
-        completeType,
+        completeType: actualCompleteType,
         pose: updateItem.pose,
         status: "所持",
         count: Number(updateItem.count),
@@ -689,12 +655,7 @@ export default function PhotoEditPage() {
       if (Number(updateItem.count) <= 0) return;
 
       const alreadyExists = updatedPhotos.some(
-        (photo) =>
-          photo.group === group &&
-          photo.member === member &&
-          photo.type === type &&
-          photo.year === year &&
-          photo.pose === updateItem.pose
+        (photo) => photo.group === group && photo.member === member && photo.type === type && photo.year === year && photo.pose === updateItem.pose
       );
 
       if (alreadyExists) return;
@@ -710,7 +671,7 @@ export default function PhotoEditPage() {
         member,
         memberKana,
         type,
-        completeType,
+        completeType: actualCompleteType,
         pose: updateItem.pose,
         status: "所持",
         count: Number(updateItem.count),
@@ -742,44 +703,28 @@ export default function PhotoEditPage() {
         console.error(error);
       }
 
-      if (!firestorePhotos.length) {
-        firestorePhotos = localPhotos.map(removeImageForFirestore);
-      }
+      if (!firestorePhotos.length) firestorePhotos = localPhotos.map(removeImageForFirestore);
 
       const localResult = applyUpdatesToPhotos(localPhotos, updates);
       const firestoreResult = applyUpdatesToPhotos(firestorePhotos, updates);
-
       const photosForImageSave = localResult.photos;
       const imageSaveTasks = [];
       const imageDeleteTasks = [];
 
       updates.forEach((updateItem) => {
         const targetPhoto = photosForImageSave.find(
-          (photo) =>
-            photo.group === group &&
-            photo.year === year &&
-            photo.member === member &&
-            photo.type === type &&
-            photo.pose === updateItem.pose
+          (photo) => photo.group === group && photo.year === year && photo.member === member && photo.type === type && photo.pose === updateItem.pose
         );
 
         if (!targetPhoto) return;
-
-        if (updateItem.image) {
-          imageSaveTasks.push(savePhotoImage(targetPhoto, updateItem.image));
-        }
-
-        if (Number(updateItem.count) <= 0) {
-          imageDeleteTasks.push(deletePhotoImage(targetPhoto));
-        }
+        if (updateItem.image) imageSaveTasks.push(savePhotoImage(targetPhoto, updateItem.image));
+        if (Number(updateItem.count) <= 0) imageDeleteTasks.push(deletePhotoImage(targetPhoto));
       });
 
       await Promise.all([...imageSaveTasks, ...imageDeleteTasks]);
 
       const filteredLocalPhotos = localResult.photos.filter((photo) => Number(photo.count || 0) > 0);
-      const filteredFirestorePhotos = firestoreResult.photos
-        .filter((photo) => Number(photo.count || 0) > 0)
-        .map(removeImageForFirestore);
+      const filteredFirestorePhotos = firestoreResult.photos.filter((photo) => Number(photo.count || 0) > 0).map(removeImageForFirestore);
 
       localStorage.setItem("photos", JSON.stringify(filteredLocalPhotos));
       await saveUserPhotos(user.uid, filteredFirestorePhotos);
@@ -808,15 +753,12 @@ export default function PhotoEditPage() {
   return (
     <main className="min-h-screen bg-black text-white px-4 py-5">
       <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl mx-auto">
-        <Link href={makeDetailUrl()} className="text-cyan-400 text-sm">
-          ← 戻る
-        </Link>
+        <Link href={makeDetailUrl()} className="text-cyan-400 text-sm">← 戻る</Link>
 
         <h1 className="text-3xl md:text-4xl font-bold mt-4 mb-6">生写真を編集</h1>
 
         <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4 mb-5">
           <p className="text-sm text-zinc-400 mb-3">編集対象</p>
-
           <div className="grid gap-2 text-sm text-zinc-300">
             <p><span className="text-zinc-500">グループ：</span>{group}</p>
             <p><span className="text-zinc-500">メンバー：</span>{member}</p>
@@ -828,71 +770,75 @@ export default function PhotoEditPage() {
         <form className="grid gap-5">
           <div>
             <label className="block text-sm text-zinc-400 mb-2">年</label>
-
             <select value={year} onChange={(e) => setYear(e.target.value)} className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-3">
-              {Array.from({ length: 16 }, (_, i) => 2026 - i).map((yearOption) => (
-                <option key={yearOption} value={String(yearOption)}>{yearOption}</option>
-              ))}
+              {Array.from({ length: 16 }, (_, i) => 2026 - i).map((yearOption) => <option key={yearOption} value={String(yearOption)}>{yearOption}</option>)}
             </select>
           </div>
 
           <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
             <div className="flex items-center justify-between gap-3 mb-4">
-              <p className="text-sm text-zinc-400">ポーズ・枚数・画像</p>
-
-              <select value={completeType} onChange={(e) => setCompleteType(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-full px-3 py-2 text-xs">
-                {completeTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
+              <div>
+                <p className="text-sm text-zinc-400">ポーズ・枚数・画像</p>
+                {isCustomCompleteType && <p className="text-xs text-zinc-500 mt-1">現在：{actualCompleteType}種コンプ</p>}
+              </div>
+              <select value={completeType} onChange={(e) => handleCompleteTypeChange(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-full px-3 py-2 text-xs">
+                {completeTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2">
-              {normalPoseList.map((pose) => (
-                <div key={pose} className="border-b md:border border-zinc-800 md:rounded-2xl md:p-3 pb-4 last:border-b-0 md:last:border-b">
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,104px)] gap-3 items-start">
-                    <p className="font-bold pt-3 min-w-0">{pose}</p>
-
-                    <CountSelector value={normalPoseCounts[pose] || ""} onChange={(value) => handleNormalPoseCountChange(pose, value)} allowZero={true} />
-                  </div>
-
-                  <input type="file" accept="image/*" onChange={(e) => handleNormalPoseImageChange(pose, e)} className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
-
-                  {isCropEditorForNormalPose(pose) && renderCropEditor(`photo-edit-crop-editor-normal-${pose}`)}
-
-                  {normalPoseImages[pose] && (
-                    <img src={normalPoseImages[pose]} alt={pose} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />
-                  )}
+            {isCustomCompleteType && (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 mb-5 grid gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-zinc-400">ポーズ種類名</p>
+                  <button type="button" onClick={addPoseSetName} className="w-10 h-10 rounded-full bg-cyan-500 text-black text-2xl font-bold active:scale-[0.98] transition">＋</button>
                 </div>
-              ))}
-            </div>
+
+                {poseSetNames.map((name, index) => (
+                  <div key={index} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center">
+                    <input type="text" value={name} onChange={(e) => updatePoseSetName(index, e.target.value)} placeholder={`種類名${index + 1}（例：ドレス）`} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
+                    <button type="button" onClick={() => removePoseSetName(index)} disabled={poseSetNames.length <= 1} className="bg-zinc-800 disabled:text-zinc-600 text-red-300 border border-zinc-700 rounded-2xl px-3 py-3 text-sm">削除</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {completeType !== "other" && (
+              <div className="grid gap-5 md:grid-cols-2">
+                {normalPoseList.map((pose) => (
+                  <div key={pose} className="border-b md:border border-zinc-800 md:rounded-2xl md:p-3 pb-4 last:border-b-0 md:last:border-b">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,104px)] gap-3 items-start">
+                      <p className="font-bold pt-3 min-w-0 break-words">{pose}</p>
+                      <CountSelector value={normalPoseCounts[pose] || ""} onChange={(value) => handleNormalPoseCountChange(pose, value)} allowZero={true} />
+                    </div>
+
+                    <input type="file" accept="image/*" onChange={(e) => handleNormalPoseImageChange(pose, e)} className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
+                    {isCropEditorForNormalPose(pose) && renderCropEditor(`photo-edit-crop-editor-normal-${pose}`)}
+                    {normalPoseImages[pose] && <img src={normalPoseImages[pose]} alt={pose} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="border-t border-zinc-700 mt-5 pt-4 grid gap-3">
               <p className="text-sm text-zinc-400">その他</p>
-
               <div className="grid gap-3 md:grid-cols-2">
                 {otherPoses.map((otherPose, index) => (
                   <div key={index} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
                     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,104px)] gap-3 items-start">
                       <input type="text" value={otherPose.name} onChange={(e) => handleOtherPoseChange(index, "name", e.target.value)} placeholder="ポーズ名" className="w-full min-w-0 bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
-
                       <CountSelector value={otherPose.count} onChange={(value) => handleOtherPoseChange(index, "count", value)} allowZero={Boolean(otherPose.id)} />
                     </div>
 
                     <input type="file" accept="image/*" onChange={(e) => handleOtherPoseImageChange(index, e)} className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
-
                     {isCropEditorForOtherPose(index) && renderCropEditor(`photo-edit-crop-editor-other-${index}`)}
-
-                    {otherPose.image && (
-                      <img src={otherPose.image} alt={otherPose.name || "その他"} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />
-                    )}
+                    {otherPose.image && <img src={otherPose.image} alt={otherPose.name || "その他"} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />}
                   </div>
                 ))}
               </div>
             </div>
           </div>
 
-          <button type="button" onClick={handleUpdate} disabled={isSaving} className="bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition">
+          <button type="button" onClick={handleUpdate} disabled={isSaving} className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition">
             {isSaving ? "更新中..." : "更新する"}
           </button>
         </form>

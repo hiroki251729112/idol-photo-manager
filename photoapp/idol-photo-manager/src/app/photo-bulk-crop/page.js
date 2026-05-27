@@ -45,6 +45,22 @@ function CountSelector({ value, onChange }) {
   );
 }
 
+function NumberSelect({ value, onChange }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3"
+    >
+      {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
+        <option key={num} value={String(num)}>
+          {num}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export default function PhotoBulkCropPage() {
   const router = useRouter();
   const imageAreaRef = useRef(null);
@@ -64,6 +80,7 @@ export default function PhotoBulkCropPage() {
   const [typeSelect, setTypeSelect] = useState("__new__");
   const [type, setType] = useState("");
   const [completeType, setCompleteType] = useState("4");
+  const [poseSetNames, setPoseSetNames] = useState([""]);
 
   const [memberOptions, setMemberOptions] = useState([]);
   const [typeOptions, setTypeOptions] = useState([]);
@@ -85,6 +102,7 @@ export default function PhotoBulkCropPage() {
   const [singleDragTarget, setSingleDragTarget] = useState(null);
   const [message, setMessage] = useState("");
 
+  const basePoseOptions = ["ヨリ", "チュウ", "ヒキ", "座り"];
   const poseOptions = ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ", "その他"];
 
   const generationOptions = [
@@ -102,22 +120,29 @@ export default function PhotoBulkCropPage() {
     "卒業生（6期生）",
   ];
 
+  const isCustomCompleteType = completeType === "custom";
+  const actualCompleteType = isCustomCompleteType ? String(poseSetNames.length * 4) : completeType;
+
   const completeTypeOptions = useMemo(() => {
+    const commonOptions = [
+      { value: "custom", label: "〇種類コンプ" },
+      { value: "other", label: "その他" },
+    ];
+
     if (group === "乃木坂46") {
       return [
         { value: "3", label: "3種コンプ" },
         { value: "5", label: "5種コンプ" },
-        { value: "other", label: "その他" },
+        ...commonOptions,
       ];
     }
 
-    return [
-      { value: "4", label: "4種コンプ" },
-      { value: "other", label: "その他" },
-    ];
+    return [{ value: "4", label: "4種コンプ" }, ...commonOptions];
   }, [group]);
 
   const visiblePoseOptions = useMemo(() => {
+    if (isCustomCompleteType) return [...basePoseOptions, "その他"];
+
     if (group === "乃木坂46") {
       if (completeType === "3") return ["ヨリ", "チュウ", "ヒキ", "その他"];
       return poseOptions;
@@ -125,7 +150,7 @@ export default function PhotoBulkCropPage() {
 
     if (completeType === "4") return ["ヨリ", "チュウ", "ヒキ", "座り", "その他"];
     return poseOptions;
-  }, [group, completeType]);
+  }, [group, completeType, isCustomCompleteType]);
 
   const selectedItems = useMemo(() => croppedItems.filter((item) => item.selected), [croppedItems]);
 
@@ -147,6 +172,8 @@ export default function PhotoBulkCropPage() {
 
   useEffect(() => {
     setCompleteType((prev) => {
+      if (prev === "custom" || prev === "other") return prev;
+
       if (group === "乃木坂46") {
         if (prev === "4") return "3";
         return prev || "3";
@@ -230,10 +257,7 @@ export default function PhotoBulkCropPage() {
 
   const scrollToCandidates = () => {
     setTimeout(() => {
-      candidateAreaRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      candidateAreaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   };
 
@@ -241,13 +265,8 @@ export default function PhotoBulkCropPage() {
     const cols = Math.max(1, Number(gridCols || 1));
     const rows = Math.max(1, Number(gridRows || 1));
 
-    const xLines = Array.from({ length: Math.max(0, cols - 1) }, (_, index) =>
-      Number((((index + 1) / cols) * 100).toFixed(4))
-    );
-
-    const yLines = Array.from({ length: Math.max(0, rows - 1) }, (_, index) =>
-      Number((((index + 1) / rows) * 100).toFixed(4))
-    );
+    const xLines = Array.from({ length: Math.max(0, cols - 1) }, (_, index) => Number((((index + 1) / cols) * 100).toFixed(4)));
+    const yLines = Array.from({ length: Math.max(0, rows - 1) }, (_, index) => Number((((index + 1) / rows) * 100).toFixed(4)));
 
     setInnerXLines(xLines);
     setInnerYLines(yLines);
@@ -375,11 +394,7 @@ export default function PhotoBulkCropPage() {
     groupPhotos.forEach((photo) => {
       if (photo.member) {
         if (!memberMap.has(photo.member)) {
-          memberMap.set(photo.member, {
-            member: photo.member,
-            memberKana: photo.memberKana || "",
-            generation: photo.generation || "",
-          });
+          memberMap.set(photo.member, { member: photo.member, memberKana: photo.memberKana || "", generation: photo.generation || "" });
         } else {
           const item = memberMap.get(photo.member);
           if (!item.memberKana && photo.memberKana) item.memberKana = photo.memberKana;
@@ -413,7 +428,7 @@ export default function PhotoBulkCropPage() {
 
       const lastTypeExists = sortedTypeOptions.some((item) => item.type === lastInput.type);
       setTypeSelect(lastTypeExists ? lastInput.type : "__new__");
-      setCompleteType(lastInput.completeType || (selectedGroup === "乃木坂46" ? "3" : "4"));
+      setCompleteType(lastInput.completeType && Number(lastInput.completeType) > 5 ? "custom" : lastInput.completeType || (selectedGroup === "乃木坂46" ? "3" : "4"));
     } else {
       setTypeSelect("__new__");
     }
@@ -428,6 +443,33 @@ export default function PhotoBulkCropPage() {
     setTypeSelect(value);
     if (value === "__new__") setType("");
     else setType(value);
+  };
+
+  const handleCompleteTypeChange = (value) => {
+    setCompleteType(value);
+    if (value === "custom" && poseSetNames.length === 0) setPoseSetNames([""]);
+  };
+
+  const addPoseSetName = () => setPoseSetNames((prev) => [...prev, ""]);
+
+  const updatePoseSetName = (index, value) => {
+    setPoseSetNames((prev) => prev.map((name, i) => (i === index ? value : name)));
+  };
+
+  const removePoseSetName = (index) => {
+    setPoseSetNames((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  };
+
+  const buildCustomPoseName = (basePose, setName) => {
+    const trimmedName = String(setName || "").trim();
+    if (!trimmedName) return basePose;
+    return `${basePose}（${trimmedName}）`;
+  };
+
+  const getFinalPoseFromItem = (item) => {
+    if (item.pose === "その他") return item.customPose.trim();
+    if (!isCustomCompleteType) return item.pose;
+    return buildCustomPoseName(item.pose, item.poseSetName);
   };
 
   const handleSourceImageChange = (e) => {
@@ -486,7 +528,7 @@ export default function PhotoBulkCropPage() {
     const rows = Number(gridRows);
 
     if (!cols || !rows || cols <= 0 || rows <= 0) {
-      setMessage("横の枚数と縦の段数を正しく入力してください。");
+      setMessage("横の枚数と縦の段数を正しく選択してください。");
       return;
     }
 
@@ -526,6 +568,7 @@ export default function PhotoBulkCropPage() {
             image: createCropImage(img, rect),
             selected: previousItem?.selected || false,
             pose: previousItem?.pose || "",
+            poseSetName: previousItem?.poseSetName || "",
             customPose: previousItem?.customPose || "",
             count: previousItem?.count || "1",
             row: row + 1,
@@ -641,9 +684,7 @@ export default function PhotoBulkCropPage() {
     img.src = sourceImage;
 
     img.onload = () => {
-      setCroppedItems((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, image: createCropImage(img, item.rect) } : item))
-      );
+      setCroppedItems((prev) => prev.map((item) => (item.id === id ? { ...item, image: createCropImage(img, item.rect) } : item)));
     };
   };
 
@@ -651,19 +692,37 @@ export default function PhotoBulkCropPage() {
     setCroppedItems((prev) =>
       prev.map((item) =>
         savedIds.includes(item.id)
-          ? {
-              ...item,
-              selected: false,
-              pose: "",
-              customPose: "",
-              count: "1",
-            }
+          ? { ...item, selected: false, pose: "", poseSetName: "", customPose: "", count: "1" }
           : item
       )
     );
 
     const nextItem = croppedItems.find((item) => !savedIds.includes(item.id));
     if (nextItem) setActiveCropId(nextItem.id);
+  };
+
+  const closeNewMemberAndTypeInputsAfterSave = (finalMember, finalMemberKana, finalType) => {
+    if (member === "__new__") {
+      setMemberOptions((prev) => {
+        const exists = prev.some((item) => item.member === finalMember);
+        const next = exists ? prev : [...prev, { member: finalMember, memberKana: finalMemberKana, generation }];
+        return sortMembers(next);
+      });
+      setMemberGenerationMap((prev) => ({ ...prev, [finalMember]: generation }));
+      setMemberKanaMap((prev) => ({ ...prev, [finalMember]: finalMemberKana }));
+      setMember(finalMember);
+      setNewMember("");
+      setNewMemberKana("");
+    }
+
+    if (typeSelect === "__new__") {
+      setTypeOptions((prev) => {
+        const exists = prev.some((item) => item.type === finalType);
+        return exists ? prev : [{ type: finalType, latestId: Date.now() }, ...prev];
+      });
+      setTypeSelect(finalType);
+      setType(finalType);
+    }
   };
 
   const handleSave = async ({ continueRegister = false } = {}) => {
@@ -680,7 +739,7 @@ export default function PhotoBulkCropPage() {
     if (selectedItemsForSave.length === 0) return alert("保存する画像を1枚以上選択してください");
 
     const invalidItem = selectedItemsForSave.find((item) => {
-      const finalPose = item.pose === "その他" ? item.customPose.trim() : item.pose;
+      const finalPose = getFinalPoseFromItem(item);
       return !finalPose || !item.count || Number(item.count) <= 0;
     });
 
@@ -704,7 +763,7 @@ export default function PhotoBulkCropPage() {
       const imageSaveTasks = [];
 
       selectedItemsForSave.forEach((item) => {
-        const finalPose = item.pose === "その他" ? item.customPose.trim() : item.pose;
+        const finalPose = getFinalPoseFromItem(item);
         const count = Number(item.count);
 
         const basePhoto = {
@@ -715,16 +774,14 @@ export default function PhotoBulkCropPage() {
           member: finalMember,
           memberKana: finalMemberKana,
           type: finalType,
-          completeType,
+          completeType: actualCompleteType,
           pose: finalPose,
           status: "所持",
           count,
           hasIndexedDbImage: Boolean(item.image),
         };
 
-        if (item.image) {
-          imageSaveTasks.push(savePhotoImage(basePhoto, item.image));
-        }
+        if (item.image) imageSaveTasks.push(savePhotoImage(basePhoto, item.image));
 
         const updatePhotos = (photos) => {
           const existingPhotoIndex = photos.findIndex(
@@ -740,7 +797,7 @@ export default function PhotoBulkCropPage() {
             photos[existingPhotoIndex].count = Number(photos[existingPhotoIndex].count || 0) + count;
             photos[existingPhotoIndex].status = "所持";
             photos[existingPhotoIndex].generation = generation;
-            photos[existingPhotoIndex].completeType = completeType;
+            photos[existingPhotoIndex].completeType = actualCompleteType;
             if (finalMemberKana) photos[existingPhotoIndex].memberKana = finalMemberKana;
             if (item.image) photos[existingPhotoIndex].hasIndexedDbImage = true;
           } else {
@@ -760,16 +817,11 @@ export default function PhotoBulkCropPage() {
       localStorage.setItem("photos", JSON.stringify(localPhotos));
       localStorage.setItem(
         `lastPhotoInput_${group}`,
-        JSON.stringify({
-          year,
-          generation,
-          member: member === "__new__" ? finalMember : member,
-          type: finalType,
-          completeType,
-        })
+        JSON.stringify({ year, generation, member: finalMember, type: finalType, completeType: actualCompleteType })
       );
 
       await saveUserPhotos(user.uid, firestorePhotos);
+      closeNewMemberAndTypeInputsAfterSave(finalMember, finalMemberKana, finalType);
 
       if (continueRegister) {
         const savedIds = selectedItemsForSave.map((item) => item.id);
@@ -781,7 +833,7 @@ export default function PhotoBulkCropPage() {
       }
 
       alert("保存しました");
-      router.push(`/select?group=${encodeURIComponent(group)}`);
+      router.push(`/select?group=${encodeURIComponent(group)}&mode=member`);
     } catch (error) {
       console.error(error);
       alert("保存に失敗しました。コンソールを確認してください。");
@@ -800,7 +852,11 @@ export default function PhotoBulkCropPage() {
         <p className="text-sm font-bold">画像調整</p>
         <p className="text-xs text-zinc-400 leading-5">水色の枠線をドラッグして調整してください。指を離すと自動で再切り出しされます。</p>
 
-        <div id={`single-adjust-area-${item.id}`} className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800" style={{ aspectRatio: `${zoomView.width} / ${zoomView.height}` }}>
+        <div
+          id={`single-adjust-area-${item.id}`}
+          className="relative w-full select-none touch-none rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-800"
+          style={{ aspectRatio: `${zoomView.width} / ${zoomView.height}` }}
+        >
           <img src={sourceImage} alt="個別調整用元画像" className="absolute block opacity-90 max-w-none" style={zoomedStyle} draggable={false} />
           <div className="absolute border-[3px] border-cyan-400 pointer-events-none" style={{ left: `${itemBox.left}%`, top: `${itemBox.top}%`, width: `${itemBox.width}%`, height: `${itemBox.height}%` }} />
 
@@ -816,7 +872,7 @@ export default function PhotoBulkCropPage() {
   return (
     <main className="min-h-screen bg-black text-white px-4 py-5">
       <div className="w-full max-w-md md:max-w-5xl lg:max-w-6xl mx-auto">
-        <Link href={`/select?group=${encodeURIComponent(group)}`} className="text-cyan-400 text-sm">← 戻る</Link>
+        <Link href={`/select?group=${encodeURIComponent(group)}&mode=member`} className="text-cyan-400 text-sm">← 戻る</Link>
 
         <h1 className="text-3xl md:text-4xl font-bold mt-4 mb-2">まとめて画像追加</h1>
         <p className="text-zinc-400 mb-6">外枠と線を動かしてまとめて切り出し、その後に候補ごとに調整できます。</p>
@@ -829,12 +885,12 @@ export default function PhotoBulkCropPage() {
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-sm text-zinc-400 mb-2">横の枚数</label>
-                <input type="number" min="1" value={gridCols} onChange={(e) => setGridCols(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3" />
+                <NumberSelect value={gridCols} onChange={setGridCols} />
               </div>
 
               <div>
                 <label className="block text-sm text-zinc-400 mb-2">縦の段数</label>
-                <input type="number" min="1" value={gridRows} onChange={(e) => setGridRows(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3" />
+                <NumberSelect value={gridRows} onChange={setGridRows} />
               </div>
             </div>
 
@@ -926,6 +982,16 @@ export default function PhotoBulkCropPage() {
                           <div className="grid gap-4">
                             {renderAdjustArea(item)}
 
+                            {isCustomCompleteType && item.pose !== "その他" && (
+                              <input
+                                type="text"
+                                value={item.poseSetName || ""}
+                                onChange={(e) => updateCroppedItem(item.id, "poseSetName", e.target.value)}
+                                placeholder="ポーズ種類名（例：ドレス）"
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm"
+                              />
+                            )}
+
                             <select value={item.pose} onChange={(e) => updateCroppedItem(item.id, "pose", e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm">
                               <option value="">ポーズ選択</option>
                               {visiblePoseOptions.map((pose) => <option key={pose} value={pose}>{pose}</option>)}
@@ -988,10 +1054,42 @@ export default function PhotoBulkCropPage() {
 
               <div>
                 <label className="block text-sm text-zinc-400 mb-2">コンプ種別</label>
-                <select value={completeType} onChange={(e) => setCompleteType(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
+                <select value={completeType} onChange={(e) => handleCompleteTypeChange(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
                   {completeTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
+
+              {isCustomCompleteType && (
+                <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 grid gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-bold">{actualCompleteType}種コンプ</p>
+                      <p className="text-xs text-zinc-400 mt-1">4枠ごとに1つの種類名を入力できます。</p>
+                    </div>
+                    <button type="button" onClick={addPoseSetName} className="w-11 h-11 rounded-full bg-cyan-500 text-black text-2xl font-bold active:scale-[0.98] transition">＋</button>
+                  </div>
+
+                  {poseSetNames.map((name, index) => (
+                    <div key={index} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center">
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => updatePoseSetName(index, e.target.value)}
+                        placeholder={`種類名${index + 1}（例：ドレス）`}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePoseSetName(index)}
+                        disabled={poseSetNames.length <= 1}
+                        className="bg-zinc-800 disabled:text-zinc-600 text-red-300 border border-zinc-700 rounded-2xl px-3 py-3 text-sm"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

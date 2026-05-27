@@ -9,7 +9,7 @@ import { getMemberImagesMap, getPhotoImage } from "@/lib/imageDb";
 
 export default function SelectPage() {
   const [group, setGroup] = useState("");
-  const [viewMode, setViewMode] = useState("type");
+  const [viewMode, setViewMode] = useState("member");
   const [displayMode, setDisplayMode] = useState("image");
   const [photos, setPhotos] = useState([]);
   const [memberImages, setMemberImages] = useState({});
@@ -106,13 +106,12 @@ export default function SelectPage() {
         setDisplayMode(savedDisplayMode);
       }
 
-      const savedViewMode = localStorage.getItem("photoViewMode");
-
       if (selectedMode === "type" || selectedMode === "member") {
         setViewMode(selectedMode);
         localStorage.setItem("photoViewMode", selectedMode);
-      } else if (savedViewMode === "type" || savedViewMode === "member") {
-        setViewMode(savedViewMode);
+      } else {
+        setViewMode("member");
+        localStorage.setItem("photoViewMode", "member");
       }
     };
 
@@ -453,46 +452,54 @@ export default function SelectPage() {
           </div>
         </div>
 
-        <div className="flex gap-3 mb-5">
-          <button
-            type="button"
-            onClick={() => setViewMode("type")}
-            className={`flex-1 rounded-full py-3 font-bold ${
-              viewMode === "type"
-                ? "bg-cyan-500 text-black"
-                : "bg-zinc-800 text-white"
-            }`}
-          >
-            種類
-          </button>
+        <div className="mb-5">
+          <p className="text-xs text-zinc-500 mb-2">表示切替</p>
 
-          <button
-            type="button"
-            onClick={() => setViewMode("member")}
-            className={`flex-1 rounded-full py-3 font-bold ${
-              viewMode === "member"
-                ? "bg-cyan-500 text-black"
-                : "bg-zinc-800 text-white"
-            }`}
-          >
-            メンバー
-          </button>
+          <div className="grid grid-cols-2 gap-2 rounded-3xl bg-zinc-950 border border-zinc-800 p-2">
+            <button
+              type="button"
+              onClick={() => setViewMode("member")}
+              className={`rounded-2xl py-3 font-bold border transition ${
+                viewMode === "member"
+                  ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_18px_rgba(6,182,212,0.35)]"
+                  : "bg-zinc-900 text-zinc-300 border-zinc-700"
+              }`}
+            >
+              メンバー
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode("type")}
+              className={`rounded-2xl py-3 font-bold border transition ${
+                viewMode === "type"
+                  ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_18px_rgba(6,182,212,0.35)]"
+                  : "bg-zinc-900 text-zinc-300 border-zinc-700"
+              }`}
+            >
+              種類
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <Link
-            href={`/photo-add?group=${encodeURIComponent(group || "櫻坂46")}`}
-            className="block bg-cyan-500 text-black rounded-2xl py-3 font-bold text-center"
-          >
-            ＋ 生写真を追加
-          </Link>
+        <div className="mb-6">
+          <p className="text-xs text-zinc-500 mb-2">操作</p>
 
-          <Link
-            href={`/export?group=${encodeURIComponent(group || "櫻坂46")}&mode=${viewMode}`}
-            className="block bg-white text-black rounded-2xl py-3 font-bold text-center"
-          >
-            一覧画像を作成
-          </Link>
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              href={`/photo-add?group=${encodeURIComponent(group || "櫻坂46")}`}
+              className="block bg-cyan-500 text-black rounded-2xl py-3 font-bold text-center border border-cyan-400 active:scale-[0.98] transition"
+            >
+              ＋ 生写真を追加
+            </Link>
+
+            <Link
+              href={`/export?group=${encodeURIComponent(group || "櫻坂46")}&mode=${viewMode}`}
+              className="block bg-white text-black rounded-2xl py-3 font-bold text-center border border-zinc-200 active:scale-[0.98] transition"
+            >
+              一覧画像を作成
+            </Link>
+          </div>
         </div>
 
         <div className="flex items-start justify-between mb-3 gap-3">

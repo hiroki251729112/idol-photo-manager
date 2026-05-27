@@ -155,14 +155,26 @@ export default function PhotoListPage() {
     return targetGroup === "乃木坂46" ? "3" : "4";
   };
 
+  const basePoseOrder = ["ヨリ", "チュウ", "ヒキ", "座り"];
   const allStandardPoseOrder = ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
 
+  const getPoseBase = (pose) => {
+    const match = String(pose || "").match(/^(.+?)（(.+)）$/);
+    return match ? match[1] : pose;
+  };
+
+  const getPoseSetName = (pose) => {
+    const match = String(pose || "").match(/^(.+?)（(.+)）$/);
+    return match ? match[2] : "";
+  };
+
   const getPoseSortIndex = (pose) => {
-    const index = allStandardPoseOrder.indexOf(pose);
+    const basePose = getPoseBase(pose);
+    const setName = getPoseSetName(pose);
+    const baseIndex = allStandardPoseOrder.indexOf(basePose);
+    const safeBaseIndex = baseIndex !== -1 ? baseIndex : allStandardPoseOrder.length;
 
-    if (index !== -1) return index;
-
-    return allStandardPoseOrder.length;
+    return `${setName || "000"}-${String(safeBaseIndex).padStart(2, "0")}-${pose}`;
   };
 
   const chunkItems = (items, size = 4) => {
@@ -179,9 +191,7 @@ export default function PhotoListPage() {
     return photos
       .filter((photo) => {
         if (Number(photo.count || 0) <= 0) return false;
-
         if (group && photo.group !== group) return false;
-
         if (member) return photo.member === member;
 
         if (type && year) {
@@ -249,8 +259,8 @@ export default function PhotoListPage() {
 
     const items = [...map.values()].map((item) => ({
       ...item,
-      photos: item.photos.sort(
-        (a, b) => getPoseSortIndex(a.pose) - getPoseSortIndex(b.pose)
+      photos: item.photos.sort((a, b) =>
+        getPoseSortIndex(a.pose).localeCompare(getPoseSortIndex(b.pose), "ja")
       ),
     }));
 
@@ -277,6 +287,45 @@ export default function PhotoListPage() {
     return `/photo-detail/${firstPhoto.id}?${params.toString()}`;
   };
 
+  const buildCustomCompleteRows = (item, photoMap, otherPhotos) => {
+    const completeCount = Number(item.completeType || 0);
+    const rowCount = Math.max(1, Math.ceil(completeCount / 4));
+    const existingSetNames = [];
+
+    item.photos.forEach((photo) => {
+      const setName = getPoseSetName(photo.pose);
+      if (setName && !existingSetNames.includes(setName)) existingSetNames.push(setName);
+    });
+
+    const rows = Array.from({ length: rowCount }, (_, rowIndex) => {
+      const setName = existingSetNames[rowIndex] || "";
+
+      return basePoseOrder.map((pose) => {
+        const poseName = setName ? `${pose}（${setName}）` : pose;
+        const photo = photoMap.get(poseName) || null;
+
+        return {
+          pose: poseName,
+          photo,
+          isPlaceholder: !photo,
+        };
+      });
+    });
+
+    const usedPoseSet = new Set(rows.flat().map((slot) => slot.pose));
+    const restPhotos = otherPhotos.filter((photo) => !usedPoseSet.has(photo.pose));
+
+    const restRows = chunkItems(restPhotos, 4).map((row) =>
+      row.map((photo) => ({
+        pose: photo.pose,
+        photo,
+        isPlaceholder: false,
+      }))
+    );
+
+    return [...rows, ...restRows];
+  };
+
   const getImageRows = (item) => {
     const photoMap = new Map();
 
@@ -286,7 +335,7 @@ export default function PhotoListPage() {
 
     const otherPhotos = item.photos
       .filter((photo) => !allStandardPoseOrder.includes(photo.pose))
-      .sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+      .sort((a, b) => getPoseSortIndex(a.pose).localeCompare(getPoseSortIndex(b.pose), "ja"));
 
     if (item.completeType === "other") {
       return chunkItems(item.photos, 4).map((row) =>
@@ -296,6 +345,10 @@ export default function PhotoListPage() {
           isPlaceholder: false,
         }))
       );
+    }
+
+    if (Number(item.completeType || 0) > 5) {
+      return buildCustomCompleteRows(item, photoMap, otherPhotos);
     }
 
     if (item.completeType === "3") {
@@ -380,6 +433,7 @@ export default function PhotoListPage() {
     if (completeType === "3") return "3種コンプ";
     if (completeType === "4") return "4種コンプ";
     if (completeType === "5") return "5種コンプ";
+    if (Number(completeType || 0) > 5) return `${completeType}種コンプ`;
     return "その他";
   };
 
@@ -453,9 +507,7 @@ export default function PhotoListPage() {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <span className="text-zinc-500 text-[10px]">
-                        No Image
-                      </span>
+                      <span className="text-zinc-500 text-[10px]">No Image</span>
                     )}
                   </div>
 
@@ -580,7 +632,7 @@ export default function PhotoListPage() {
                                   </div>
                                 )}
 
-                                <p className="text-[11px] text-center mt-1 font-bold truncate">
+                                <p className="text-[11px] text-center mt-1 font-bold truncate" title={slot.pose}>
                                   {slot.pose}
                                 </p>
 
