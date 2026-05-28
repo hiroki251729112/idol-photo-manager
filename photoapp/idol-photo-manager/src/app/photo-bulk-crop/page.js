@@ -122,6 +122,7 @@ export default function PhotoBulkCropPage() {
 
   const isCustomCompleteType = completeType === "custom";
   const actualCompleteType = isCustomCompleteType ? String(poseSetNames.length * 4) : completeType;
+  const activePoseSetNames = useMemo(() => poseSetNames.map((name) => name.trim()).filter(Boolean), [poseSetNames]);
 
   const completeTypeOptions = useMemo(() => {
     const commonOptions = [
@@ -735,15 +736,20 @@ export default function PhotoBulkCropPage() {
     if (member === "__new__" && !finalMemberKana) return alert("メンバーのふりがなを入力してください");
     if (!finalType) return alert("種類を入力してください");
 
+    if (isCustomCompleteType && activePoseSetNames.length === 0) {
+      return alert("〇種類コンプでは、登録情報のポーズ種類名を1つ以上入力してください。例：ドレス");
+    }
+
     const selectedItemsForSave = croppedItems.filter((item) => item.selected);
     if (selectedItemsForSave.length === 0) return alert("保存する画像を1枚以上選択してください");
 
     const invalidItem = selectedItemsForSave.find((item) => {
       const finalPose = getFinalPoseFromItem(item);
+      if (isCustomCompleteType && item.pose !== "その他" && !item.poseSetName) return true;
       return !finalPose || !item.count || Number(item.count) <= 0;
     });
 
-    if (invalidItem) return alert("選択した画像には、ポーズと枚数を設定してください。その他の場合はポーズ名も入力してください。");
+    if (invalidItem) return alert("選択した画像には、ポーズ種類名・ポーズ・枚数を設定してください。その他の場合はポーズ名も入力してください。");
 
     try {
       setIsSaving(true);
@@ -983,13 +989,16 @@ export default function PhotoBulkCropPage() {
                             {renderAdjustArea(item)}
 
                             {isCustomCompleteType && item.pose !== "その他" && (
-                              <input
-                                type="text"
+                              <select
                                 value={item.poseSetName || ""}
                                 onChange={(e) => updateCroppedItem(item.id, "poseSetName", e.target.value)}
-                                placeholder="ポーズ種類名（例：ドレス）"
                                 className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm"
-                              />
+                              >
+                                <option value="">ポーズ種類名を選択</option>
+                                {activePoseSetNames.map((name) => (
+                                  <option key={name} value={name}>{name}</option>
+                                ))}
+                              </select>
                             )}
 
                             <select value={item.pose} onChange={(e) => updateCroppedItem(item.id, "pose", e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm">
@@ -1064,7 +1073,7 @@ export default function PhotoBulkCropPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-bold">{actualCompleteType}種コンプ</p>
-                      <p className="text-xs text-zinc-400 mt-1">4枠ごとに1つの種類名を入力できます。</p>
+                      <p className="text-xs text-zinc-400 mt-1">ここに入力した名前が、切り出し候補側の選択肢にすぐ反映されます。</p>
                     </div>
                     <button type="button" onClick={addPoseSetName} className="w-11 h-11 rounded-full bg-cyan-500 text-black text-2xl font-bold active:scale-[0.98] transition">＋</button>
                   </div>

@@ -405,63 +405,61 @@ export default function SelectPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-white px-4 py-5">
+    <main className="min-h-screen bg-black text-white px-4 py-4">
       <div className="w-full max-w-md md:max-w-4xl lg:max-w-6xl mx-auto">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <Link href="/" className="inline-block text-zinc-400 text-sm">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <Link href="/" className="inline-block text-zinc-400 text-xs">
             ← グループ選択へ
           </Link>
 
           <div className="flex items-center gap-2 shrink-0">
             <Link
               href={`/backup?group=${encodeURIComponent(group || "櫻坂46")}`}
-              className="bg-zinc-900 border border-zinc-700 text-zinc-300 rounded-full px-3 py-2 text-[11px] font-bold active:scale-[0.98] transition"
+              className="bg-zinc-900 border border-zinc-700 text-zinc-300 rounded-full px-3 py-1.5 text-[11px] font-bold active:scale-[0.98] transition"
             >
               バックアップ
             </Link>
 
             <Link
               href={`/detail-edit?group=${encodeURIComponent(group || "櫻坂46")}`}
-              className="bg-zinc-900 border border-zinc-700 text-zinc-200 rounded-full px-4 py-2 text-xs font-bold active:scale-[0.98] transition"
+              className="bg-zinc-900 border border-zinc-700 text-zinc-200 rounded-full px-3 py-1.5 text-[11px] font-bold active:scale-[0.98] transition"
             >
               詳細編集
             </Link>
           </div>
         </div>
 
-        <h1 className="text-3xl md:text-4xl font-bold text-center mb-2">
+        <h1 className="text-2xl md:text-4xl font-bold text-center mb-1">
           生写真コレクション
         </h1>
 
-        {group && <p className="text-center text-zinc-400 mb-5">{group}</p>}
+        {group && <p className="text-center text-zinc-400 text-sm mb-4">{group}</p>}
 
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-3 text-center">
-            <p className="text-[11px] text-zinc-400">総所持枚数</p>
-            <p className="text-lg font-bold mt-1">{totalCount}枚</p>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-2 text-center">
+            <p className="text-[10px] text-zinc-400">総所持枚数</p>
+            <p className="text-base font-bold mt-0.5">{totalCount}枚</p>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-3 text-center">
-            <p className="text-[11px] text-zinc-400">登録種類</p>
-            <p className="text-lg font-bold mt-1">{totalTypes}</p>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-2 text-center">
+            <p className="text-[10px] text-zinc-400">登録種類</p>
+            <p className="text-base font-bold mt-0.5">{totalTypes}</p>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-3 text-center">
-            <p className="text-[11px] text-zinc-400">登録メンバー</p>
-            <p className="text-lg font-bold mt-1">{totalMembers}</p>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-2 text-center">
+            <p className="text-[10px] text-zinc-400">登録メンバー</p>
+            <p className="text-base font-bold mt-0.5">{totalMembers}</p>
           </div>
         </div>
 
-        <div className="mb-5">
-          <p className="text-xs text-zinc-500 mb-2">表示切替</p>
-
-          <div className="grid grid-cols-2 gap-2 rounded-3xl bg-zinc-950 border border-zinc-800 p-2">
+        <div className="mb-4">
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-zinc-950 border border-zinc-800 p-1.5">
             <button
               type="button"
               onClick={() => setViewMode("member")}
-              className={`rounded-2xl py-3 font-bold border transition ${
+              className={`rounded-xl py-2 text-sm font-bold border transition ${
                 viewMode === "member"
-                  ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_18px_rgba(6,182,212,0.35)]"
+                  ? "bg-zinc-100 text-black border-white"
                   : "bg-zinc-900 text-zinc-300 border-zinc-700"
               }`}
             >
@@ -471,9 +469,9 @@ export default function SelectPage() {
             <button
               type="button"
               onClick={() => setViewMode("type")}
-              className={`rounded-2xl py-3 font-bold border transition ${
+              className={`rounded-xl py-2 text-sm font-bold border transition ${
                 viewMode === "type"
-                  ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_18px_rgba(6,182,212,0.35)]"
+                  ? "bg-zinc-100 text-black border-white"
                   : "bg-zinc-900 text-zinc-300 border-zinc-700"
               }`}
             >
@@ -482,9 +480,7 @@ export default function SelectPage() {
           </div>
         </div>
 
-        <div className="mb-6">
-          <p className="text-xs text-zinc-500 mb-2">操作</p>
-
+        <div className="mb-5">
           <div className="grid grid-cols-2 gap-3">
             <Link
               href={`/photo-add?group=${encodeURIComponent(group || "櫻坂46")}`}
@@ -495,7 +491,7 @@ export default function SelectPage() {
 
             <Link
               href={`/export?group=${encodeURIComponent(group || "櫻坂46")}&mode=${viewMode}`}
-              className="block bg-white text-black rounded-2xl py-3 font-bold text-center border border-zinc-200 active:scale-[0.98] transition"
+              className="block bg-zinc-900 text-zinc-100 rounded-2xl py-3 font-bold text-center border border-zinc-700 active:scale-[0.98] transition"
             >
               一覧画像を作成
             </Link>

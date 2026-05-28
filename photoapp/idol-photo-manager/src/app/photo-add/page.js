@@ -45,6 +45,12 @@ function CountSelector({ value, onChange }) {
   );
 }
 
+const createPoseSet = () => ({
+  id: String(Date.now() + Math.random()),
+  name: "",
+  otherPoses: [{ name: "", count: "", image: "" }],
+});
+
 export default function PhotoAddPage() {
   const router = useRouter();
   const cropAreaRef = useRef(null);
@@ -60,7 +66,7 @@ export default function PhotoAddPage() {
   const [typeSelect, setTypeSelect] = useState("__new__");
   const [type, setType] = useState("");
   const [completeType, setCompleteType] = useState("4");
-  const [poseSetNames, setPoseSetNames] = useState([""]);
+  const [poseSets, setPoseSets] = useState([createPoseSet()]);
   const [memberOptions, setMemberOptions] = useState([]);
   const [typeOptions, setTypeOptions] = useState([]);
   const [memberGenerationMap, setMemberGenerationMap] = useState({});
@@ -88,8 +94,9 @@ export default function PhotoAddPage() {
     "卒業生（6期生）",
   ];
 
+  const basePoseList = ["ヨリ", "チュウ", "ヒキ", "座り"];
   const isCustomCompleteType = completeType === "custom";
-  const actualCompleteType = isCustomCompleteType ? String(poseSetNames.length * 4) : completeType;
+  const actualCompleteType = isCustomCompleteType ? String(poseSets.length * 4) : completeType;
 
   const completeTypeOptions = useMemo(() => {
     const common = [
@@ -108,13 +115,16 @@ export default function PhotoAddPage() {
     return [{ value: "4", label: "4種コンプ" }, ...common];
   }, [group]);
 
+  const buildCustomPoseName = (basePose, setName) => {
+    const trimmedName = String(setName || "").trim();
+    if (!trimmedName) return basePose;
+    return `${basePose}（${trimmedName}）`;
+  };
+
   const normalPoseList = useMemo(() => {
     if (isCustomCompleteType) {
-      return poseSetNames.flatMap((setName) =>
-        ["ヨリ", "チュウ", "ヒキ", "座り"].map((pose) => {
-          const trimmedName = String(setName || "").trim();
-          return trimmedName ? `${pose}（${trimmedName}）` : pose;
-        })
+      return poseSets.flatMap((set) =>
+        basePoseList.map((pose) => buildCustomPoseName(pose, set.name))
       );
     }
 
@@ -122,7 +132,7 @@ export default function PhotoAddPage() {
     if (completeType === "4") return ["ヨリ", "チュウ", "ヒキ", "座り"];
     if (completeType === "5") return ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
     return [];
-  }, [completeType, isCustomCompleteType, poseSetNames]);
+  }, [completeType, isCustomCompleteType, poseSets]);
 
   useEffect(() => {
     if (!dragTarget) return;
@@ -317,23 +327,29 @@ export default function PhotoAddPage() {
 
   const handleCompleteTypeChange = (value) => {
     setCompleteType(value);
-    if (value === "custom" && poseSetNames.length === 0) setPoseSetNames([""]);
+    if (value === "custom" && poseSets.length === 0) setPoseSets([createPoseSet()]);
   };
 
-  const addPoseSetName = () => setPoseSetNames((prev) => [...prev, ""]);
-  const updatePoseSetName = (index, value) => setPoseSetNames((prev) => prev.map((name, i) => (i === index ? value : name)));
-  const removePoseSetName = (index) => setPoseSetNames((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  const addPoseSet = () => setPoseSets((prev) => [...prev, createPoseSet()]);
+
+  const updatePoseSetName = (setId, value) => {
+    setPoseSets((prev) => prev.map((set) => (set.id === setId ? { ...set, name: value } : set)));
+  };
+
+  const removePoseSet = (setId) => {
+    setPoseSets((prev) => (prev.length <= 1 ? prev : prev.filter((set) => set.id !== setId)));
+  };
 
   const handlePoseCountChange = (pose, value) => {
     setPoseCounts((prev) => ({ ...prev, [pose]: value }));
   };
 
-  const openCropEditor = ({ kind, pose, index, sourceImage }) => {
-    setCropTarget({ kind, pose, index, sourceImage });
+  const openCropEditor = ({ kind, pose, index, setId, sourceImage }) => {
+    setCropTarget({ kind, pose, index, setId, sourceImage });
     setCropImageSize({ width: 0, height: 0 });
     setCropBox({ left: 5, top: 5, right: 95, bottom: 95 });
 
-    const editorId = kind === "normal" ? `photo-add-crop-editor-normal-${pose}` : `photo-add-crop-editor-other-${index}`;
+    const editorId = kind === "normal" ? `photo-add-crop-editor-normal-${pose}` : `photo-add-crop-editor-other-${setId || "base"}-${index}`;
     setTimeout(() => document.getElementById(editorId)?.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
   };
 
@@ -341,12 +357,25 @@ export default function PhotoAddPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onloadend = () => openCropEditor({ kind: "normal", pose, index: null, sourceImage: reader.result });
+    reader.onloadend = () => openCropEditor({ kind: "normal", pose, index: null, setId: null, sourceImage: reader.result });
     reader.readAsDataURL(file);
     e.target.value = "";
   };
 
-  const handleOtherPoseChange = (index, field, value) => {
+  const handleOtherPoseChange = (index, field, value, setId = null) => {
+    if (setId) {
+      setPoseSets((prev) =>
+        prev.map((set) => {
+          if (set.id !== setId) return set;
+          const updated = set.otherPoses.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
+          const lastItem = updated[updated.length - 1];
+          const nextOtherPoses = lastItem && (lastItem.name.trim() || lastItem.count || lastItem.image) && updated.length < 20 ? [...updated, { name: "", count: "", image: "" }] : updated;
+          return { ...set, otherPoses: nextOtherPoses };
+        })
+      );
+      return;
+    }
+
     setOtherPoses((prev) => {
       const updated = prev.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
       const lastItem = updated[updated.length - 1];
@@ -357,11 +386,11 @@ export default function PhotoAddPage() {
     });
   };
 
-  const handleOtherPoseImageChange = (index, e) => {
+  const handleOtherPoseImageChange = (index, e, setId = null) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onloadend = () => openCropEditor({ kind: "other", pose: "その他", index, sourceImage: reader.result });
+    reader.onloadend = () => openCropEditor({ kind: "other", pose: "その他", index, setId, sourceImage: reader.result });
     reader.readAsDataURL(file);
     e.target.value = "";
   };
@@ -396,7 +425,7 @@ export default function PhotoAddPage() {
     try {
       const croppedImage = await createCroppedImage();
       if (cropTarget.kind === "normal") setPoseImages((prev) => ({ ...prev, [cropTarget.pose]: croppedImage }));
-      if (cropTarget.kind === "other") handleOtherPoseChange(cropTarget.index, "image", croppedImage);
+      if (cropTarget.kind === "other") handleOtherPoseChange(cropTarget.index, "image", croppedImage, cropTarget.setId);
       setCropTarget(null);
     } catch (error) {
       console.error(error);
@@ -407,7 +436,7 @@ export default function PhotoAddPage() {
   const handleUseOriginalImage = () => {
     if (!cropTarget?.sourceImage) return;
     if (cropTarget.kind === "normal") setPoseImages((prev) => ({ ...prev, [cropTarget.pose]: cropTarget.sourceImage }));
-    if (cropTarget.kind === "other") handleOtherPoseChange(cropTarget.index, "image", cropTarget.sourceImage);
+    if (cropTarget.kind === "other") handleOtherPoseChange(cropTarget.index, "image", cropTarget.sourceImage, cropTarget.setId);
     setCropTarget(null);
   };
 
@@ -418,7 +447,7 @@ export default function PhotoAddPage() {
   };
 
   const isCropEditorForNormalPose = (pose) => cropTarget?.kind === "normal" && cropTarget?.pose === pose;
-  const isCropEditorForOtherPose = (index) => cropTarget?.kind === "other" && cropTarget?.index === index;
+  const isCropEditorForOtherPose = (index, setId = null) => cropTarget?.kind === "other" && cropTarget?.index === index && cropTarget?.setId === setId;
 
   const renderCropEditor = (editorId) => {
     if (!cropTarget) return null;
@@ -462,6 +491,37 @@ export default function PhotoAddPage() {
     );
   };
 
+  const validateCustomPoseSets = () => {
+    if (!isCustomCompleteType) return true;
+
+    const names = poseSets.map((set) => set.name.trim());
+    const hasEmpty = names.some((name) => !name);
+    if (hasEmpty) {
+      alert("〇種類コンプでは、すべてのポーズ種類名を入力してください。例：ドレス");
+      return false;
+    }
+
+    const uniqueNames = new Set(names);
+    if (uniqueNames.size !== names.length) {
+      alert("ポーズ種類名が重複しています。別の名前を入力してください。");
+      return false;
+    }
+
+    return true;
+  };
+
+  const collectOtherPoses = () => {
+    if (isCustomCompleteType) {
+      return poseSets.flatMap((set) =>
+        set.otherPoses
+          .filter((item) => item.name.trim() || item.count || item.image)
+          .map((item) => ({ ...item, setName: set.name.trim() }))
+      );
+    }
+
+    return otherPoses.filter((item) => item.name.trim() || item.count || item.image);
+  };
+
   const handleSave = async () => {
     const finalMember = member === "__new__" ? newMember.trim() : member.trim();
     const finalType = type.trim();
@@ -471,17 +531,23 @@ export default function PhotoAddPage() {
     if (!finalMember) return alert("メンバーを選択してください");
     if (member === "__new__" && !finalMemberKana) return alert("メンバーのふりがなを入力してください");
     if (!finalType) return alert("種類を入力してください");
+    if (!validateCustomPoseSets()) return;
 
     const normalSelectedPoses = Object.entries(poseCounts)
       .filter(([poseName, value]) => normalPoseList.includes(poseName) && value && Number(value) > 0)
       .map(([poseName, count]) => ({ pose: poseName, count: Number(count), image: poseImages[poseName] || "" }));
 
-    const filledOtherPoses = otherPoses.filter((item) => item.name.trim() || item.count || item.image);
+    const filledOtherPoses = collectOtherPoses();
     const invalidOtherPose = filledOtherPoses.find((item) => !item.name.trim() || !item.count || Number(item.count) <= 0);
 
     if (invalidOtherPose) return alert("その他はポーズ名と枚数を両方入力してください");
 
-    const otherSelectedPoses = filledOtherPoses.map((item) => ({ pose: item.name.trim(), count: Number(item.count), image: item.image || "" }));
+    const otherSelectedPoses = filledOtherPoses.map((item) => ({
+      pose: item.setName ? `${item.name.trim()}（${item.setName}）` : item.name.trim(),
+      count: Number(item.count),
+      image: item.image || "",
+    }));
+
     const selectedPoses = [...normalSelectedPoses, ...otherSelectedPoses];
 
     if (selectedPoses.length === 0) return alert("ポーズを1つ以上選択してください");
@@ -561,6 +627,41 @@ export default function PhotoAddPage() {
     }
   };
 
+  const renderOtherPoseInputs = (items, setId = null) => {
+    return (
+      <div className="border-t border-zinc-700 mt-5 pt-4 grid gap-3">
+        <p className="text-sm text-zinc-400">その他</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          {items.map((otherPose, index) => (
+            <div key={index} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,104px)] gap-3 items-start">
+                <input type="text" value={otherPose.name} onChange={(e) => handleOtherPoseChange(index, "name", e.target.value, setId)} placeholder="ポーズ名" className="w-full min-w-0 bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
+                <CountSelector value={otherPose.count} onChange={(value) => handleOtherPoseChange(index, "count", value, setId)} />
+              </div>
+              <input type="file" accept="image/*" onChange={(e) => handleOtherPoseImageChange(index, e, setId)} className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
+              {isCropEditorForOtherPose(index, setId) && renderCropEditor(`photo-add-crop-editor-other-${setId || "base"}-${index}`)}
+              {otherPose.image && <img src={otherPose.image} alt={otherPose.name || "その他"} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderNormalPoseInput = (pose) => {
+    return (
+      <div key={pose} className="border-b md:border border-zinc-800 md:rounded-2xl md:p-3 pb-4 last:border-b-0 md:last:border-b">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,104px)] gap-3 items-start">
+          <p className="font-bold pt-3 min-w-0 break-words">{pose}</p>
+          <CountSelector value={poseCounts[pose] || ""} onChange={(value) => handlePoseCountChange(pose, value)} />
+        </div>
+        <input type="file" accept="image/*" onChange={(e) => handlePoseImageChange(pose, e)} className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
+        {isCropEditorForNormalPose(pose) && renderCropEditor(`photo-add-crop-editor-normal-${pose}`)}
+        {poseImages[pose] && <img src={poseImages[pose]} alt={pose} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />}
+      </div>
+    );
+  };
+
   return (
     <main className="min-h-screen bg-black text-white px-4 py-5">
       <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl mx-auto">
@@ -621,54 +722,47 @@ export default function PhotoAddPage() {
               </select>
             </div>
 
-            {isCustomCompleteType && (
-              <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 mb-5 grid gap-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-zinc-400">ポーズ種類名</p>
-                  <button type="button" onClick={addPoseSetName} className="w-10 h-10 rounded-full bg-cyan-500 text-black text-2xl font-bold active:scale-[0.98] transition">＋</button>
-                </div>
+            {isCustomCompleteType ? (
+              <div className="grid gap-5">
+                {poseSets.map((set, setIndex) => {
+                  const setPoseNames = basePoseList.map((pose) => buildCustomPoseName(pose, set.name));
 
-                {poseSetNames.map((name, index) => (
-                  <div key={index} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center">
-                    <input type="text" value={name} onChange={(e) => updatePoseSetName(index, e.target.value)} placeholder={`種類名${index + 1}（例：ドレス）`} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
-                    <button type="button" onClick={() => removePoseSetName(index)} disabled={poseSetNames.length <= 1} className="bg-zinc-800 disabled:text-zinc-600 text-red-300 border border-zinc-700 rounded-2xl px-3 py-3 text-sm">削除</button>
-                  </div>
-                ))}
-              </div>
-            )}
+                  return (
+                    <div key={set.id} className="bg-zinc-950 border border-zinc-800 rounded-3xl p-3">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div>
+                          <p className="text-sm font-bold">セット{setIndex + 1}</p>
+                          <p className="text-xs text-zinc-500 mt-1">ポーズ種類名〜その他までが1セットです。</p>
+                        </div>
+                        <button type="button" onClick={() => removePoseSet(set.id)} disabled={poseSets.length <= 1} className="bg-zinc-800 disabled:text-zinc-600 text-red-300 border border-zinc-700 rounded-2xl px-3 py-2 text-sm">削除</button>
+                      </div>
 
-            {completeType !== "other" && (
-              <div className="grid gap-5 md:grid-cols-2">
-                {normalPoseList.map((pose) => (
-                  <div key={pose} className="border-b md:border border-zinc-800 md:rounded-2xl md:p-3 pb-4 last:border-b-0 md:last:border-b">
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,104px)] gap-3 items-start">
-                      <p className="font-bold pt-3 min-w-0 break-words">{pose}</p>
-                      <CountSelector value={poseCounts[pose] || ""} onChange={(value) => handlePoseCountChange(pose, value)} />
+                      <input type="text" value={set.name} onChange={(e) => updatePoseSetName(set.id, e.target.value)} placeholder="ポーズ種類名（例：ドレス）" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm mb-4" />
+
+                      <div className="grid gap-5 md:grid-cols-2">
+                        {setPoseNames.map((pose) => renderNormalPoseInput(pose))}
+                      </div>
+
+                      {renderOtherPoseInputs(set.otherPoses, set.id)}
                     </div>
-                    <input type="file" accept="image/*" onChange={(e) => handlePoseImageChange(pose, e)} className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
-                    {isCropEditorForNormalPose(pose) && renderCropEditor(`photo-add-crop-editor-normal-${pose}`)}
-                    {poseImages[pose] && <img src={poseImages[pose]} alt={pose} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />}
-                  </div>
-                ))}
-              </div>
-            )}
+                  );
+                })}
 
-            <div className="border-t border-zinc-700 mt-5 pt-4 grid gap-3">
-              <p className="text-sm text-zinc-400">その他</p>
-              <div className="grid gap-3 md:grid-cols-2">
-                {otherPoses.map((otherPose, index) => (
-                  <div key={index} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,104px)] gap-3 items-start">
-                      <input type="text" value={otherPose.name} onChange={(e) => handleOtherPoseChange(index, "name", e.target.value)} placeholder="ポーズ名" className="w-full min-w-0 bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
-                      <CountSelector value={otherPose.count} onChange={(value) => handleOtherPoseChange(index, "count", value)} />
-                    </div>
-                    <input type="file" accept="image/*" onChange={(e) => handleOtherPoseImageChange(index, e)} className="mt-3 w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm" />
-                    {isCropEditorForOtherPose(index) && renderCropEditor(`photo-add-crop-editor-other-${index}`)}
-                    {otherPose.image && <img src={otherPose.image} alt={otherPose.name || "その他"} className="mt-3 w-full max-w-[140px] rounded-2xl border border-zinc-700 bg-zinc-800 p-2" />}
-                  </div>
-                ))}
+                <button type="button" onClick={addPoseSet} className="w-full bg-zinc-950 border border-cyan-500 text-cyan-300 rounded-3xl py-4 font-bold active:scale-[0.98] transition">
+                  ＋ ポーズ種類を追加する
+                </button>
               </div>
-            </div>
+            ) : (
+              <>
+                {completeType !== "other" && (
+                  <div className="grid gap-5 md:grid-cols-2">
+                    {normalPoseList.map((pose) => renderNormalPoseInput(pose))}
+                  </div>
+                )}
+
+                {renderOtherPoseInputs(otherPoses)}
+              </>
+            )}
           </div>
 
           <button type="button" onClick={handleSave} disabled={isSaving} className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-3xl py-4 font-bold text-lg active:scale-[0.98] transition">
