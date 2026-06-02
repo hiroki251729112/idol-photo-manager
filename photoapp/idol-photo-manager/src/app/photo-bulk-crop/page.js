@@ -5,7 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { getUserPhotos, saveUserPhotos } from "@/lib/photoService";
+import {
+  getUserPhotos,
+  getUserTypeOrder,
+  saveUserPhotos,
+} from "@/lib/photoService";
 import { savePhotoImage } from "@/lib/imageDb";
 
 function CountSelector({ value, onChange }) {
@@ -261,7 +265,6 @@ export default function PhotoBulkCropPage() {
       candidateAreaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   };
-
   const resetGridLines = () => {
     const cols = Math.max(1, Number(gridCols || 1));
     const rows = Math.max(1, Number(gridRows || 1));
@@ -323,6 +326,49 @@ export default function PhotoBulkCropPage() {
     });
   };
 
+  const loadTypeOrder = async (currentUser, selectedGroup) => {
+    const localOrder =
+      JSON.parse(localStorage.getItem(`typeOrder_${selectedGroup}`)) || [];
+
+    if (!currentUser) return localOrder;
+
+    try {
+      const firestoreOrder = await getUserTypeOrder(
+        currentUser.uid,
+        selectedGroup
+      );
+
+      if (firestoreOrder.length > 0) {
+        localStorage.setItem(
+          `typeOrder_${selectedGroup}`,
+          JSON.stringify(firestoreOrder)
+        );
+        return firestoreOrder;
+      }
+
+      return localOrder;
+    } catch (error) {
+      console.error(error);
+      return localOrder;
+    }
+  };
+
+  const sortTypeOptionsBySavedOrder = (items, savedOrder = []) => {
+    const itemMap = new Map(
+      items.map((item) => [`${item.year}__${item.type}`, item])
+    );
+
+    const orderedItems = savedOrder
+      .filter((key) => itemMap.has(key))
+      .map((key) => itemMap.get(key));
+
+    const missingItems = items.filter(
+      (item) => !savedOrder.includes(`${item.year}__${item.type}`)
+    );
+
+    return [...orderedItems, ...missingItems];
+  };
+
   const normalizePhotos = (photos) => {
     const normalizedPhotos = [];
 
@@ -376,6 +422,7 @@ export default function PhotoBulkCropPage() {
 
   const loadOptions = async (selectedGroup, currentUser = null) => {
     let savedPhotos = [];
+    const savedTypeOrder = await loadTypeOrder(currentUser, selectedGroup);
 
     try {
       if (currentUser) savedPhotos = await getUserPhotos(currentUser.uid);
@@ -407,12 +454,31 @@ export default function PhotoBulkCropPage() {
       if (photo.member && photo.memberKana) kanaMap[photo.member] = photo.memberKana;
 
       if (photo.type) {
-        if (!typeMap.has(photo.type)) typeMap.set(photo.type, { type: photo.type, latestId: Number(photo.id || 0) });
-        else typeMap.get(photo.type).latestId = Math.max(typeMap.get(photo.type).latestId, Number(photo.id || 0));
+        const key = `${photo.year || ""}__${photo.type || ""}`;
+
+        if (!typeMap.has(key)) {
+          typeMap.set(key, {
+            type: photo.type,
+            year: photo.year || "",
+            latestId: Number(photo.id || 0),
+          });
+        } else {
+          const item = typeMap.get(key);
+          item.latestId = Math.max(item.latestId, Number(photo.id || 0));
+        }
       }
     });
 
-    const sortedTypeOptions = [...typeMap.values()].sort((a, b) => b.latestId - a.latestId);
+    const defaultSortedTypeOptions = [...typeMap.values()].sort((a, b) => {
+      const yearDiff = Number(b.year || 0) - Number(a.year || 0);
+      if (yearDiff !== 0) return yearDiff;
+      return Number(b.latestId || 0) - Number(a.latestId || 0);
+    });
+
+    const sortedTypeOptions = sortTypeOptionsBySavedOrder(
+      defaultSortedTypeOptions,
+      savedTypeOrder
+    );
 
     setMemberOptions(sortMembers([...memberMap.values()]));
     setTypeOptions(sortedTypeOptions);
@@ -427,8 +493,8 @@ export default function PhotoBulkCropPage() {
       setMember(lastInput.member || "");
       setType(lastInput.type || "");
 
-      const lastTypeExists = sortedTypeOptions.some((item) => item.type === lastInput.type);
-      setTypeSelect(lastTypeExists ? lastInput.type : "__new__");
+      const lastTypeExists = sortedTypeOptions.some((item) => item.type === lastInput.type && item.year === lastInput.year);
+      setTypeSelect(lastTypeExists ? `${lastInput.year}__${lastInput.type}` : "__new__");
       setCompleteType(lastInput.completeType && Number(lastInput.completeType) > 5 ? "custom" : lastInput.completeType || (selectedGroup === "乃木坂46" ? "3" : "4"));
     } else {
       setTypeSelect("__new__");
@@ -442,8 +508,18 @@ export default function PhotoBulkCropPage() {
 
   const handleTypeSelectChange = (value) => {
     setTypeSelect(value);
-    if (value === "__new__") setType("");
-    else setType(value);
+
+    if (value === "__new__") {
+      setType("");
+      return;
+    }
+
+    const selectedType = typeOptions.find((item) => `${item.year}__${item.type}` === value);
+
+    if (selectedType) {
+      setType(selectedType.type);
+      if (selectedType.year) setYear(selectedType.year);
+    }
   };
 
   const handleCompleteTypeChange = (value) => {
@@ -507,6 +583,43 @@ export default function PhotoBulkCropPage() {
     return canvas.toDataURL("image/jpeg", 0.92);
   };
 
+  const createCropImageAsync = (imageSource, rect) => {
+    return new Promise((resolve, reject) => {
+      if (!imageSource || !rect) {
+        reject(new Error("画像または切り出し範囲がありません"));
+        return;
+      }
+
+      const img = new Image();
+      img.src = imageSource;
+
+      img.onload = () => {
+        try {
+          const croppedImage = createCropImage(img, rect);
+          resolve(croppedImage);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      img.onerror = () => {
+        reject(new Error("保存用画像の再生成に失敗しました"));
+      };
+    });
+  };
+
+  const getStableImageForSave = async (item) => {
+    if (sourceImage && item?.rect) {
+      try {
+        return await createCropImageAsync(sourceImage, item.rect);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    return item.image || "";
+  };
+
   const makeZoomView = (rect) => {
     if (!imageSize.width || !imageSize.height) return null;
 
@@ -547,7 +660,6 @@ export default function PhotoBulkCropPage() {
       const xLines = [0, ...innerXLines, 100].sort((a, b) => a - b);
       const yLines = [0, ...innerYLines, 100].sort((a, b) => a - b);
       const results = [];
-
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const index = row * cols + col;
@@ -718,10 +830,10 @@ export default function PhotoBulkCropPage() {
 
     if (typeSelect === "__new__") {
       setTypeOptions((prev) => {
-        const exists = prev.some((item) => item.type === finalType);
-        return exists ? prev : [{ type: finalType, latestId: Date.now() }, ...prev];
+        const exists = prev.some((item) => item.type === finalType && item.year === year);
+        return exists ? prev : [{ type: finalType, year, latestId: Date.now() }, ...prev];
       });
-      setTypeSelect(finalType);
+      setTypeSelect(`${year}__${finalType}`);
       setType(finalType);
     }
   };
@@ -768,9 +880,10 @@ export default function PhotoBulkCropPage() {
       firestorePhotos = normalizePhotos(firestorePhotos);
       const imageSaveTasks = [];
 
-      selectedItemsForSave.forEach((item) => {
+      for (const item of selectedItemsForSave) {
         const finalPose = getFinalPoseFromItem(item);
         const count = Number(item.count);
+        const stableImage = await getStableImageForSave(item);
 
         const basePhoto = {
           id: String(Date.now() + Math.random()),
@@ -784,10 +897,12 @@ export default function PhotoBulkCropPage() {
           pose: finalPose,
           status: "所持",
           count,
-          hasIndexedDbImage: Boolean(item.image),
+          hasIndexedDbImage: Boolean(stableImage),
         };
 
-        if (item.image) imageSaveTasks.push(savePhotoImage(basePhoto, item.image));
+        if (stableImage) {
+          imageSaveTasks.push(savePhotoImage(basePhoto, stableImage));
+        }
 
         const updatePhotos = (photos) => {
           const existingPhotoIndex = photos.findIndex(
@@ -800,12 +915,19 @@ export default function PhotoBulkCropPage() {
           );
 
           if (existingPhotoIndex !== -1) {
-            photos[existingPhotoIndex].count = Number(photos[existingPhotoIndex].count || 0) + count;
+            photos[existingPhotoIndex].count =
+              Number(photos[existingPhotoIndex].count || 0) + count;
             photos[existingPhotoIndex].status = "所持";
             photos[existingPhotoIndex].generation = generation;
             photos[existingPhotoIndex].completeType = actualCompleteType;
-            if (finalMemberKana) photos[existingPhotoIndex].memberKana = finalMemberKana;
-            if (item.image) photos[existingPhotoIndex].hasIndexedDbImage = true;
+
+            if (finalMemberKana) {
+              photos[existingPhotoIndex].memberKana = finalMemberKana;
+            }
+
+            if (stableImage) {
+              photos[existingPhotoIndex].hasIndexedDbImage = true;
+            }
           } else {
             photos.push(basePhoto);
           }
@@ -813,7 +935,7 @@ export default function PhotoBulkCropPage() {
 
         updatePhotos(localPhotos);
         updatePhotos(firestorePhotos);
-      });
+      }
 
       await Promise.all(imageSaveTasks);
 
@@ -847,7 +969,6 @@ export default function PhotoBulkCropPage() {
       setIsSaving(false);
     }
   };
-
   const renderAdjustArea = (item) => {
     const itemBox = getSingleBoxPercentInZoom(item);
     const zoomView = getZoomViewRect(item);
@@ -1039,7 +1160,7 @@ export default function PhotoBulkCropPage() {
                 <label className="block text-sm text-zinc-400 mb-2">種類</label>
                 <select value={typeSelect} onChange={(e) => handleTypeSelectChange(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
                   <option value="__new__">＋ 新しく入力</option>
-                  {typeOptions.map((item) => <option key={item.type} value={item.type}>{item.type}</option>)}
+                  {typeOptions.map((item) => <option key={`${item.year}__${item.type}`} value={`${item.year}__${item.type}`}>{item.year ? `${item.year}年　` : ""}{item.type}</option>)}
                 </select>
 
                 {typeSelect === "__new__" && <input type="text" value={type} onChange={(e) => setType(e.target.value)} placeholder="種類名を入力" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}

@@ -197,7 +197,6 @@ export default function PhotoEditPage() {
       })
     );
   };
-
   const removeImageForFirestore = (photo) => ({
     id: String(photo.id || photo.firestoreId || Date.now() + Math.random()),
     group: photo.group || "",
@@ -325,14 +324,6 @@ export default function PhotoEditPage() {
       }
     });
 
-    if (shouldUseCustom) {
-      const rowCount = Math.max(1, Math.ceil(Number(firstCompleteType || 4) / 4));
-      const sets = Array.from({ length: rowCount }, (_, index) => createPoseSet(inferredSetNames[index] || ""));
-      setPoseSets(sets);
-    } else {
-      setPoseSets([createPoseSet()]);
-    }
-
     const countMap = {};
     const imageMap = {};
     const idMap = {};
@@ -369,15 +360,23 @@ export default function PhotoEditPage() {
     });
 
     if (shouldUseCustom) {
-      setPoseSets((prev) =>
-        prev.map((set) => {
-          const otherList = customOtherMap.get(set.name) || [];
-          return {
-            ...set,
-            otherPoses: otherList.length > 0 ? [...otherList, { id: null, name: "", count: "", image: "" }] : [{ id: null, name: "", count: "", image: "" }],
-          };
-        })
-      );
+      const rowCount = Math.max(1, Math.ceil(Number(firstCompleteType || 4) / 4));
+      const sets = Array.from({ length: rowCount }, (_, index) => {
+        const setName = inferredSetNames[index] || "";
+        const otherList = customOtherMap.get(setName) || [];
+
+        return {
+          ...createPoseSet(setName),
+          otherPoses:
+            otherList.length > 0
+              ? [...otherList, { id: null, name: "", count: "", image: "" }]
+              : [{ id: null, name: "", count: "", image: "" }],
+        };
+      });
+
+      setPoseSets(sets);
+    } else {
+      setPoseSets([createPoseSet()]);
     }
 
     setNormalPoseCounts(countMap);
@@ -492,8 +491,7 @@ export default function PhotoEditPage() {
       }
       return updated;
     });
-  };
-
+  };  
   const openCropEditor = ({ kind, pose, index, setId, sourceImage }) => {
     setCropTarget({ kind, pose, index, setId, sourceImage });
     setCropImageSize({ width: 0, height: 0 });
@@ -678,14 +676,26 @@ export default function PhotoEditPage() {
     return updates;
   };
 
+  const isSameOriginalGroup = (photo) => {
+    return (
+      photo.group === originalGroup &&
+      photo.member === originalMember &&
+      photo.type === originalType &&
+      photo.year === originalYear
+    );
+  };
+
   const applyUpdatesToPhotos = (sourcePhotos, updates) => {
     let firstSavedId = String(params.id);
-    const updatedPhotoKeys = new Set(updates.map((item) => String(item.id || "")).filter(Boolean));
-    const newPoseNames = new Set(updates.map((item) => item.pose));
+    const processedPhotoIds = new Set();
+    const processedPoseNames = new Set();
+    const updatedPhotos = [];
 
-    const updatedPhotos = sourcePhotos.map((photo) => {
-      const isOriginalGroup = photo.group === originalGroup && photo.member === originalMember && photo.type === originalType && photo.year === originalYear;
-      if (!isOriginalGroup) return photo;
+    sourcePhotos.forEach((photo) => {
+      if (!isSameOriginalGroup(photo)) {
+        updatedPhotos.push(photo);
+        return;
+      }
 
       const photoId = String(photo.id || photo.firestoreId || "");
       const updateById = updates.find((item) => item.id && String(item.id) === photoId);
@@ -693,13 +703,27 @@ export default function PhotoEditPage() {
       const updateItem = updateById || updateByPose;
 
       if (!updateItem) {
-        if (updatedPhotoKeys.size > 0 || newPoseNames.size > 0) {
-          return { ...photo, count: Number(photo.count || 0), completeType: actualCompleteType };
-        }
-        return photo;
+        updatedPhotos.push({
+          ...photo,
+          group,
+          year,
+          generation,
+          member,
+          memberKana,
+          type,
+          completeType: actualCompleteType,
+        });
+        return;
       }
 
-      return {
+      processedPhotoIds.add(photoId);
+      processedPoseNames.add(updateItem.pose);
+
+      if (Number(updateItem.count) <= 0) {
+        return;
+      }
+
+      updatedPhotos.push({
         ...photo,
         id: photoId || String(Date.now() + Math.random()),
         group,
@@ -713,11 +737,12 @@ export default function PhotoEditPage() {
         status: "所持",
         count: Number(updateItem.count),
         hasIndexedDbImage: Boolean(updateItem.image || photo.hasIndexedDbImage),
-      };
+      });
     });
 
     updates.forEach((updateItem) => {
-      if (updateItem.id) return;
+      if (updateItem.id && processedPhotoIds.has(String(updateItem.id))) return;
+      if (!updateItem.id && processedPoseNames.has(updateItem.pose)) return;
       if (Number(updateItem.count) <= 0) return;
 
       const alreadyExists = updatedPhotos.some(
@@ -776,15 +801,18 @@ export default function PhotoEditPage() {
       const photosForImageSave = localResult.photos;
       const imageSaveTasks = [];
       const imageDeleteTasks = [];
-
       updates.forEach((updateItem) => {
         const targetPhoto = photosForImageSave.find(
           (photo) => photo.group === group && photo.year === year && photo.member === member && photo.type === type && photo.pose === updateItem.pose
         );
 
+        if (Number(updateItem.count) <= 0) {
+          if (targetPhoto) imageDeleteTasks.push(deletePhotoImage(targetPhoto));
+          return;
+        }
+
         if (!targetPhoto) return;
         if (updateItem.image) imageSaveTasks.push(savePhotoImage(targetPhoto, updateItem.image));
-        if (Number(updateItem.count) <= 0) imageDeleteTasks.push(deletePhotoImage(targetPhoto));
       });
 
       await Promise.all([...imageSaveTasks, ...imageDeleteTasks]);
@@ -796,7 +824,16 @@ export default function PhotoEditPage() {
       await saveUserPhotos(user.uid, filteredFirestorePhotos);
 
       alert("更新しました");
-      router.push(makeUpdatedDetailUrl(localResult.firstSavedId || firestoreResult.firstSavedId));
+
+      const nextDetailTarget = filteredLocalPhotos.find(
+        (photo) => photo.group === group && photo.year === year && photo.member === member && photo.type === type
+      );
+
+      if (nextDetailTarget) {
+        router.push(makeUpdatedDetailUrl(nextDetailTarget.id));
+      } else {
+        router.push(`/photo-list?group=${encodeURIComponent(group)}&member=${encodeURIComponent(member)}&mode=member`);
+      }
     } catch (error) {
       console.error(error);
       alert("更新に失敗しました。コンソールを確認してください。");

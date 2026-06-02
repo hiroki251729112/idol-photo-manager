@@ -5,7 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { getUserPhotos, saveUserPhotos } from "@/lib/photoService";
+import {
+  getUserPhotos,
+  getUserTypeOrder,
+  saveUserPhotos,
+} from "@/lib/photoService";
 import { savePhotoImage } from "@/lib/imageDb";
 
 function CountSelector({ value, onChange }) {
@@ -98,6 +102,9 @@ export default function PhotoAddPage() {
   const isCustomCompleteType = completeType === "custom";
   const actualCompleteType = isCustomCompleteType ? String(poseSets.length * 4) : completeType;
 
+  const normalizeText = (value) => String(value || "").trim();
+  const normalizeYear = (value) => String(value || "").trim();
+
   const completeTypeOptions = useMemo(() => {
     const common = [
       { value: "custom", label: "〇種類コンプ" },
@@ -179,31 +186,82 @@ export default function PhotoAddPage() {
     });
   };
 
+  const loadTypeOrder = async (currentUser, selectedGroup) => {
+    const localOrder =
+      JSON.parse(localStorage.getItem(`typeOrder_${selectedGroup}`)) || [];
+
+    if (!currentUser) return localOrder;
+
+    try {
+      const firestoreOrder = await getUserTypeOrder(
+        currentUser.uid,
+        selectedGroup
+      );
+
+      if (firestoreOrder.length > 0) {
+        localStorage.setItem(
+          `typeOrder_${selectedGroup}`,
+          JSON.stringify(firestoreOrder)
+        );
+        return firestoreOrder;
+      }
+
+      return localOrder;
+    } catch (error) {
+      console.error(error);
+      return localOrder;
+    }
+  };
+
+  const sortTypeOptionsBySavedOrder = (items, savedOrder = []) => {
+    const itemMap = new Map(
+      items.map((item) => [`${item.year}__${item.type}`, item])
+    );
+
+    const orderedItems = savedOrder
+      .filter((key) => itemMap.has(key))
+      .map((key) => itemMap.get(key));
+
+    const missingItems = items.filter(
+      (item) => !savedOrder.includes(`${item.year}__${item.type}`)
+    );
+
+    return [...orderedItems, ...missingItems];
+  };
+
   const normalizePhotos = (photos) => {
     const normalizedPhotos = [];
 
     photos.forEach((photo) => {
       const existingIndex = normalizedPhotos.findIndex(
         (p) =>
-          p.group === photo.group &&
-          p.year === photo.year &&
-          p.member === photo.member &&
-          p.type === photo.type &&
-          p.pose === photo.pose
+          normalizeText(p.group) === normalizeText(photo.group) &&
+          normalizeYear(p.year) === normalizeYear(photo.year) &&
+          normalizeText(p.member) === normalizeText(photo.member) &&
+          normalizeText(p.type) === normalizeText(photo.type) &&
+          normalizeText(p.pose) === normalizeText(photo.pose)
       );
 
       if (existingIndex !== -1) {
         normalizedPhotos[existingIndex].count = Number(normalizedPhotos[existingIndex].count || 0) + Number(photo.count || 0);
         normalizedPhotos[existingIndex].status = photo.status || "所持";
         if (photo.imageUrl) normalizedPhotos[existingIndex].imageUrl = photo.imageUrl;
-        if (photo.memberKana) normalizedPhotos[existingIndex].memberKana = photo.memberKana;
-        if (photo.completeType) normalizedPhotos[existingIndex].completeType = photo.completeType;
+        if (photo.memberKana) normalizedPhotos[existingIndex].memberKana = normalizeText(photo.memberKana);
+        if (photo.completeType) normalizedPhotos[existingIndex].completeType = normalizeText(photo.completeType);
         if (photo.hasIndexedDbImage) normalizedPhotos[existingIndex].hasIndexedDbImage = true;
       } else {
         const { image, ...photoWithoutImage } = photo;
         normalizedPhotos.push({
           ...photoWithoutImage,
           id: String(photo.id || Date.now() + Math.random()),
+          group: normalizeText(photo.group),
+          year: normalizeYear(photo.year),
+          generation: normalizeText(photo.generation),
+          member: normalizeText(photo.member),
+          memberKana: normalizeText(photo.memberKana),
+          type: normalizeText(photo.type),
+          completeType: normalizeText(photo.completeType),
+          pose: normalizeText(photo.pose),
           count: Number(photo.count || 0),
           status: photo.status || "所持",
         });
@@ -215,48 +273,80 @@ export default function PhotoAddPage() {
 
   const removeImageForFirestore = (photo) => ({
     id: String(photo.id || Date.now() + Math.random()),
-    group: photo.group || "",
-    year: photo.year || "",
-    generation: photo.generation || "",
-    member: photo.member || "",
-    memberKana: photo.memberKana || "",
-    type: photo.type || "",
-    completeType: photo.completeType || "",
-    pose: photo.pose || "",
+    group: normalizeText(photo.group),
+    year: normalizeYear(photo.year),
+    generation: normalizeText(photo.generation),
+    member: normalizeText(photo.member),
+    memberKana: normalizeText(photo.memberKana),
+    type: normalizeText(photo.type),
+    completeType: normalizeText(photo.completeType),
+    pose: normalizeText(photo.pose),
     status: photo.status || "所持",
     count: Number(photo.count || 0),
     imageUrl: photo.imageUrl || "",
     hasIndexedDbImage: Boolean(photo.hasIndexedDbImage),
   });
 
-  const setupOptionsFromPhotos = (photos, selectedGroup, defaultCompleteType) => {
-    const groupPhotos = photos.filter((photo) => photo.group === selectedGroup && Number(photo.count || 0) > 0);
+  const setupOptionsFromPhotos = async (photos, selectedGroup, defaultCompleteType, currentUser) => {
+    const savedTypeOrder = await loadTypeOrder(currentUser, selectedGroup);
+
+    const groupPhotos = photos.filter((photo) => normalizeText(photo.group) === selectedGroup && Number(photo.count || 0) > 0);
     const memberMap = new Map();
     const typeMap = new Map();
     const generationMap = {};
     const kanaMap = {};
 
     groupPhotos.forEach((photo) => {
-      if (photo.member) {
-        if (!memberMap.has(photo.member)) {
-          memberMap.set(photo.member, { member: photo.member, memberKana: photo.memberKana || "", generation: photo.generation || "" });
+      const normalizedMember = normalizeText(photo.member);
+      const normalizedMemberKana = normalizeText(photo.memberKana);
+      const normalizedGeneration = normalizeText(photo.generation);
+      const normalizedType = normalizeText(photo.type);
+      const normalizedYear = normalizeYear(photo.year);
+
+      if (normalizedMember) {
+        if (!memberMap.has(normalizedMember)) {
+          memberMap.set(normalizedMember, {
+            member: normalizedMember,
+            memberKana: normalizedMemberKana,
+            generation: normalizedGeneration,
+          });
         } else {
-          const item = memberMap.get(photo.member);
-          if (!item.memberKana && photo.memberKana) item.memberKana = photo.memberKana;
-          if (!item.generation && photo.generation) item.generation = photo.generation;
+          const item = memberMap.get(normalizedMember);
+          if (!item.memberKana && normalizedMemberKana) item.memberKana = normalizedMemberKana;
+          if (!item.generation && normalizedGeneration) item.generation = normalizedGeneration;
         }
       }
 
-      if (photo.member && photo.generation) generationMap[photo.member] = photo.generation;
-      if (photo.member && photo.memberKana) kanaMap[photo.member] = photo.memberKana;
+      if (normalizedMember && normalizedGeneration) generationMap[normalizedMember] = normalizedGeneration;
+      if (normalizedMember && normalizedMemberKana) kanaMap[normalizedMember] = normalizedMemberKana;
 
-      if (photo.type) {
-        if (!typeMap.has(photo.type)) typeMap.set(photo.type, { type: photo.type, latestId: Number(photo.id || 0) });
-        else typeMap.get(photo.type).latestId = Math.max(typeMap.get(photo.type).latestId, Number(photo.id || 0));
+      if (normalizedType) {
+        const key = `${normalizedYear}__${normalizedType}`;
+
+        if (!typeMap.has(key)) {
+          typeMap.set(key, {
+            type: normalizedType,
+            year: normalizedYear,
+            latestId: Number(photo.id || 0),
+          });
+        } else {
+          const item = typeMap.get(key);
+          item.latestId = Math.max(item.latestId, Number(photo.id || 0));
+        }
       }
     });
 
-    const sortedTypeOptions = [...typeMap.values()].sort((a, b) => b.latestId - a.latestId);
+    const defaultSortedTypeOptions = [...typeMap.values()].sort((a, b) => {
+      const yearDiff = Number(b.year || 0) - Number(a.year || 0);
+      if (yearDiff !== 0) return yearDiff;
+      return Number(b.latestId || 0) - Number(a.latestId || 0);
+    });
+
+    const sortedTypeOptions = sortTypeOptionsBySavedOrder(
+      defaultSortedTypeOptions,
+      savedTypeOrder
+    );
+
     setMemberOptions(sortMembers([...memberMap.values()]));
     setTypeOptions(sortedTypeOptions);
     setMemberGenerationMap(generationMap);
@@ -265,12 +355,16 @@ export default function PhotoAddPage() {
     const lastInput = JSON.parse(localStorage.getItem(`lastPhotoInput_${selectedGroup}`));
 
     if (lastInput) {
-      setYear(lastInput.year || "2026");
+      const lastYear = normalizeYear(lastInput.year || "2026");
+      const lastType = normalizeText(lastInput.type || "");
+
+      setYear(lastYear || "2026");
       setGeneration(lastInput.generation || "1期生");
       setMember(lastInput.member || "");
-      setType(lastInput.type || "");
-      const lastTypeExists = sortedTypeOptions.some((item) => item.type === lastInput.type);
-      setTypeSelect(lastTypeExists ? lastInput.type : "__new__");
+      setType(lastType);
+
+      const lastTypeExists = sortedTypeOptions.some((item) => item.type === lastType && item.year === lastYear);
+      setTypeSelect(lastTypeExists ? `${lastYear}__${lastType}` : "__new__");
       setCompleteType(lastInput.completeType && Number(lastInput.completeType) > 5 ? "custom" : lastInput.completeType || defaultCompleteType);
     } else {
       setTypeSelect("__new__");
@@ -296,7 +390,7 @@ export default function PhotoAddPage() {
       }
 
       if (!photosForOptions.length) photosForOptions = JSON.parse(localStorage.getItem("photos")) || [];
-      setupOptionsFromPhotos(photosForOptions, selectedGroup, defaultCompleteType);
+      await setupOptionsFromPhotos(photosForOptions, selectedGroup, defaultCompleteType, currentUser);
     });
 
     return () => unsubscribe();
@@ -321,8 +415,18 @@ export default function PhotoAddPage() {
 
   const handleTypeSelectChange = (value) => {
     setTypeSelect(value);
-    if (value === "__new__") setType("");
-    else setType(value);
+
+    if (value === "__new__") {
+      setType("");
+      return;
+    }
+
+    const selectedType = typeOptions.find((item) => `${item.year}__${item.type}` === value);
+
+    if (selectedType) {
+      setType(selectedType.type);
+      if (selectedType.year) setYear(selectedType.year);
+    }
   };
 
   const handleCompleteTypeChange = (value) => {
@@ -588,11 +692,11 @@ export default function PhotoAddPage() {
         const updatePhotos = (photos) => {
           const existingPhotoIndex = photos.findIndex(
             (photo) =>
-              photo.group === group &&
-              photo.year === year &&
-              photo.member === finalMember &&
-              photo.type === finalType &&
-              photo.pose === poseItem.pose
+              normalizeText(photo.group) === normalizeText(group) &&
+              normalizeYear(photo.year) === normalizeYear(year) &&
+              normalizeText(photo.member) === normalizeText(finalMember) &&
+              normalizeText(photo.type) === normalizeText(finalType) &&
+              normalizeText(photo.pose) === normalizeText(poseItem.pose)
           );
 
           if (existingPhotoIndex !== -1) {
@@ -690,7 +794,11 @@ export default function PhotoAddPage() {
               <label className="block text-sm text-zinc-400 mb-2">種類</label>
               <select value={typeSelect} onChange={(e) => handleTypeSelectChange(e.target.value)} className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-3">
                 <option value="__new__">＋ 新しく入力</option>
-                {typeOptions.map((item) => <option key={item.type} value={item.type}>{item.type}</option>)}
+                {typeOptions.map((item) => (
+                  <option key={`${item.year}__${item.type}`} value={`${item.year}__${item.type}`}>
+                    {item.year ? `${item.year}年　` : ""}{item.type}
+                  </option>
+                ))}
               </select>
               {typeSelect === "__new__" && <input type="text" value={type} onChange={(e) => setType(e.target.value)} placeholder="種類名を入力" className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-3 mt-2" />}
             </div>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { getUserPhotos } from "@/lib/photoService";
+import { getUserPhotos, getUserTypeOrder } from "@/lib/photoService";
 import { getMemberImagesMap, getPhotoImage } from "@/lib/imageDb";
 
 export default function SelectPage() {
@@ -20,16 +20,25 @@ export default function SelectPage() {
 
   const [typeSort, setTypeSort] = useState("created_desc");
   const [memberSort, setMemberSort] = useState("default");
+  const [typeOrder, setTypeOrder] = useState([]);
 
   const typeThumbnailPriority = ["チュウ", "ヨリ", "座りヨリ", "ヒキ", "座り"];
 
+  const normalizeText = (value) => {
+    return String(value || "").trim();
+  };
+
+  const normalizeYear = (value) => {
+    return String(value || "").trim();
+  };
+
   const getPhotoKey = (photo) => {
     return [
-      photo.group || "",
-      photo.year || "",
-      photo.member || "",
-      photo.type || "",
-      photo.pose || "",
+      normalizeText(photo.group),
+      normalizeYear(photo.year),
+      normalizeText(photo.member),
+      normalizeText(photo.type),
+      normalizeText(photo.pose),
     ].join("__");
   };
 
@@ -75,16 +84,61 @@ export default function SelectPage() {
     return photosWithImages;
   };
 
+  const normalizeLoadedPhotos = (targetPhotos) => {
+    return targetPhotos.map((photo) => ({
+      ...photo,
+      group: normalizeText(photo.group),
+      year: normalizeYear(photo.year),
+      generation: normalizeText(photo.generation),
+      member: normalizeText(photo.member),
+      memberKana: normalizeText(photo.memberKana),
+      type: normalizeText(photo.type),
+      pose: normalizeText(photo.pose),
+      count: Number(photo.count || 0),
+    }));
+  };
+
+  const loadTypeOrder = async (currentUser, selectedGroup) => {
+    const localOrder =
+      JSON.parse(localStorage.getItem(`typeOrder_${selectedGroup}`)) || [];
+
+    if (!currentUser) {
+      setTypeOrder(localOrder);
+      return;
+    }
+
+    try {
+      const firestoreOrder = await getUserTypeOrder(
+        currentUser.uid,
+        selectedGroup
+      );
+
+      if (firestoreOrder.length > 0) {
+        localStorage.setItem(
+          `typeOrder_${selectedGroup}`,
+          JSON.stringify(firestoreOrder)
+        );
+        setTypeOrder(firestoreOrder);
+      } else {
+        setTypeOrder(localOrder);
+      }
+    } catch (error) {
+      console.error(error);
+      setTypeOrder(localOrder);
+    }
+  };
+
   useEffect(() => {
     let selectedGroup = "";
     let selectedMode = "";
 
-    const loadBaseSettings = async () => {
+    const loadBaseSettings = async (currentUser) => {
       const params = new URLSearchParams(window.location.search);
       selectedGroup = params.get("group") || "";
       selectedMode = params.get("mode") || "";
 
       setGroup(selectedGroup);
+      await loadTypeOrder(currentUser, selectedGroup);
 
       let loadedMemberImages =
         JSON.parse(localStorage.getItem(`memberImages_${selectedGroup}`)) || {};
@@ -129,12 +183,12 @@ export default function SelectPage() {
         }
 
         const photosWithImages = await attachIndexedDbImages(loadedPhotos);
-        setPhotos(photosWithImages);
+        setPhotos(normalizeLoadedPhotos(photosWithImages));
       } catch (error) {
         console.error(error);
         const localPhotos = JSON.parse(localStorage.getItem("photos")) || [];
         const photosWithImages = await attachIndexedDbImages(localPhotos);
-        setPhotos(photosWithImages);
+        setPhotos(normalizeLoadedPhotos(photosWithImages));
       } finally {
         setIsLoading(false);
       }
@@ -142,7 +196,7 @@ export default function SelectPage() {
 
     const loadData = async (currentUser) => {
       setIsLoading(true);
-      await loadBaseSettings();
+      await loadBaseSettings(currentUser);
       await loadPhotos(currentUser);
     };
 
@@ -188,7 +242,7 @@ export default function SelectPage() {
 
   const totalTypes = useMemo(() => {
     return new Set(
-      filteredByGroup.map((photo) => `${photo.year}-${photo.type}`)
+      filteredByGroup.map((photo) => `${photo.year}__${photo.type}`)
     ).size;
   }, [filteredByGroup]);
 
@@ -237,7 +291,6 @@ export default function SelectPage() {
 
     return -999;
   };
-
   const generations = useMemo(() => {
     return [
       ...new Set(
@@ -269,6 +322,18 @@ export default function SelectPage() {
     return anyPhoto?.image || "";
   };
 
+  const sortTypeItemsByOriginalOrder = (items) => {
+    const itemMap = new Map(items.map((item) => [item.key, item]));
+
+    const orderedItems = typeOrder
+      .filter((key) => itemMap.has(key))
+      .map((key) => itemMap.get(key));
+
+    const missingItems = items.filter((item) => !typeOrder.includes(item.key));
+
+    return [...orderedItems, ...missingItems];
+  };
+
   const typeItems = useMemo(() => {
     const filtered =
       yearFilter === "すべて"
@@ -278,12 +343,18 @@ export default function SelectPage() {
     const typeMap = new Map();
 
     filtered.forEach((photo) => {
-      const key = `${photo.year}-${photo.type}`;
+      const normalizedType = normalizeText(photo.type);
+      const normalizedYear = normalizeYear(photo.year);
+
+      if (!normalizedType || !normalizedYear) return;
+
+      const key = `${normalizedYear}__${normalizedType}`;
 
       if (!typeMap.has(key)) {
         typeMap.set(key, {
-          year: photo.year,
-          type: photo.type,
+          key,
+          year: normalizedYear,
+          type: normalizedType,
           image: "",
           totalCount: 0,
           latestId: Number(photo.id || 0),
@@ -307,15 +378,27 @@ export default function SelectPage() {
 
     switch (typeSort) {
       case "created_asc":
-        return items.sort((a, b) => a.oldestId - b.oldestId);
-      case "created_desc":
-        return items.sort((a, b) => b.latestId - a.latestId);
+        return items.sort((a, b) => {
+          const yearDiff = Number(a.year || 0) - Number(b.year || 0);
+          if (yearDiff !== 0) return yearDiff;
+          return Number(a.oldestId || 0) - Number(b.oldestId || 0);
+        });
+
       case "count":
         return items.sort((a, b) => b.totalCount - a.totalCount);
+
+      case "original":
+        return sortTypeItemsByOriginalOrder(items);
+
+      case "created_desc":
       default:
-        return items;
+        return items.sort((a, b) => {
+          const yearDiff = Number(b.year || 0) - Number(a.year || 0);
+          if (yearDiff !== 0) return yearDiff;
+          return Number(b.latestId || 0) - Number(a.latestId || a.id || 0);
+        });
     }
-  }, [filteredByGroup, yearFilter, typeSort]);
+  }, [filteredByGroup, yearFilter, typeSort, typeOrder]);
 
   const memberItems = useMemo(() => {
     const filtered =
@@ -328,19 +411,23 @@ export default function SelectPage() {
     const memberMap = new Map();
 
     filtered.forEach((photo) => {
-      if (!memberMap.has(photo.member)) {
-        memberMap.set(photo.member, {
-          member: photo.member,
+      const normalizedMember = normalizeText(photo.member);
+
+      if (!normalizedMember) return;
+
+      if (!memberMap.has(normalizedMember)) {
+        memberMap.set(normalizedMember, {
+          member: normalizedMember,
           memberKana: photo.memberKana || "",
           generation: photo.generation || "",
-          image: memberImages[photo.member] || "",
+          image: memberImages[normalizedMember] || "",
           totalCount: 0,
           latestId: Number(photo.id || 0),
           oldestId: Number(photo.id || 0),
         });
       }
 
-      const item = memberMap.get(photo.member);
+      const item = memberMap.get(normalizedMember);
 
       item.totalCount += Number(photo.count || 0);
       item.latestId = Math.max(item.latestId, Number(photo.id || 0));
@@ -354,8 +441,8 @@ export default function SelectPage() {
         item.generation = photo.generation;
       }
 
-      if (memberImages[photo.member]) {
-        item.image = memberImages[photo.member];
+      if (memberImages[normalizedMember]) {
+        item.image = memberImages[normalizedMember];
       }
     });
 
@@ -369,6 +456,7 @@ export default function SelectPage() {
             "ja"
           )
         );
+
       case "name_desc":
         return items.sort((a, b) =>
           (b.memberKana || b.member).localeCompare(
@@ -376,6 +464,7 @@ export default function SelectPage() {
             "ja"
           )
         );
+
       case "default":
       default:
         return items.sort((a, b) => {
@@ -497,7 +586,6 @@ export default function SelectPage() {
             </Link>
           </div>
         </div>
-
         <div className="flex items-start justify-between mb-3 gap-3">
           <p className="text-sm text-zinc-400 pt-2 whitespace-nowrap">
             {viewMode === "type" ? "年で絞り込み" : "期生で絞り込み"}
@@ -505,15 +593,24 @@ export default function SelectPage() {
 
           <div className="flex gap-3 items-start">
             {viewMode === "type" ? (
-              <select
-                value={typeSort}
-                onChange={(e) => setTypeSort(e.target.value)}
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-              >
-                <option value="created_desc">追加日（降順）</option>
-                <option value="created_asc">追加日（昇順）</option>
-                <option value="count">枚数順</option>
-              </select>
+              <div>
+                <select
+                  value={typeSort}
+                  onChange={(e) => setTypeSort(e.target.value)}
+                  className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="created_desc">追加日（降順）</option>
+                  <option value="created_asc">追加日（昇順）</option>
+                  <option value="count">枚数順</option>
+                  <option value="original">オリジナル</option>
+                </select>
+
+                {typeSort === "original" && (
+                  <p className="text-[10px] text-zinc-500 mt-1 leading-4 text-right">
+                    ※詳細編集の種類編集から表示順を変更できます
+                  </p>
+                )}
+              </div>
             ) : (
               <select
                 value={memberSort}
@@ -595,7 +692,7 @@ export default function SelectPage() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {typeItems.map((item) => (
                   <Link
-                    key={`${item.year}-${item.type}`}
+                    key={item.key}
                     href={`/photo-list?group=${encodeURIComponent(
                       group
                     )}&type=${encodeURIComponent(item.type)}&year=${item.year}&mode=type`}
@@ -612,7 +709,7 @@ export default function SelectPage() {
                     )}
 
                     <div className="mt-3">
-                      <p className="font-bold text-sm leading-tight">
+                      <p className="font-bold text-sm leading-tight break-words">
                         {item.type}
                       </p>
                       <p className="text-sm text-zinc-400 mt-1">
@@ -628,13 +725,13 @@ export default function SelectPage() {
               <div className="grid gap-1 md:grid-cols-2 lg:grid-cols-3 md:gap-x-6">
                 {typeItems.map((item) => (
                   <Link
-                    key={`${item.year}-${item.type}`}
+                    key={item.key}
                     href={`/photo-list?group=${encodeURIComponent(
                       group
                     )}&type=${encodeURIComponent(item.type)}&year=${item.year}&mode=type`}
                     className="block border-b border-zinc-800 py-3"
                   >
-                    <p className="font-bold text-lg leading-tight">
+                    <p className="font-bold text-lg leading-tight break-words">
                       {item.type}
                     </p>
 
@@ -702,7 +799,7 @@ export default function SelectPage() {
                     )}
 
                     <div className="mt-3">
-                      <p className="font-bold text-lg leading-tight">
+                      <p className="font-bold text-lg leading-tight break-words">
                         {item.member}
                       </p>
                       <p className="text-sm text-zinc-400 mt-1">
@@ -724,7 +821,7 @@ export default function SelectPage() {
                     )}&member=${encodeURIComponent(item.member)}&mode=member`}
                     className="block border-b border-zinc-800 py-3"
                   >
-                    <p className="font-bold text-lg leading-tight">
+                    <p className="font-bold text-lg leading-tight break-words">
                       {item.member}
                     </p>
 

@@ -20,13 +20,16 @@ export default function PhotoListPage() {
   const [memberImage, setMemberImage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+  const normalizeText = (value) => String(value || "").trim();
+  const normalizeYear = (value) => String(value || "").trim();
+
   const getPhotoKey = (photo) => {
     return [
-      photo.group || "",
-      photo.year || "",
-      photo.member || "",
-      photo.type || "",
-      photo.pose || "",
+      normalizeText(photo.group),
+      normalizeYear(photo.year),
+      normalizeText(photo.member),
+      normalizeText(photo.type),
+      normalizeText(photo.pose),
     ].join("__");
   };
 
@@ -70,6 +73,21 @@ export default function PhotoListPage() {
     );
 
     return photosWithImages;
+  };
+
+  const normalizeLoadedPhotos = (targetPhotos) => {
+    return targetPhotos.map((photo) => ({
+      ...photo,
+      group: normalizeText(photo.group),
+      year: normalizeYear(photo.year),
+      generation: normalizeText(photo.generation),
+      member: normalizeText(photo.member),
+      memberKana: normalizeText(photo.memberKana),
+      type: normalizeText(photo.type),
+      completeType: normalizeText(photo.completeType),
+      pose: normalizeText(photo.pose),
+      count: Number(photo.count || 0),
+    }));
   };
 
   useEffect(() => {
@@ -131,13 +149,13 @@ export default function PhotoListPage() {
         }
 
         const photosWithImages = await attachIndexedDbImages(loadedPhotos);
-        setPhotos(photosWithImages);
+        setPhotos(normalizeLoadedPhotos(photosWithImages));
         await loadMemberImage();
       } catch (error) {
         console.error(error);
         const localPhotos = JSON.parse(localStorage.getItem("photos")) || [];
         const photosWithImages = await attachIndexedDbImages(localPhotos);
-        setPhotos(photosWithImages);
+        setPhotos(normalizeLoadedPhotos(photosWithImages));
         await loadMemberImage();
       } finally {
         setIsLoading(false);
@@ -186,6 +204,35 @@ export default function PhotoListPage() {
 
     return chunks;
   };
+  const getYearNumber = (value) => {
+    const numberValue = Number(value || 0);
+    return Number.isFinite(numberValue) ? numberValue : 0;
+  };
+
+  const getIdNumber = (value) => {
+    const numberValue = Number(value || 0);
+    return Number.isFinite(numberValue) ? numberValue : 0;
+  };
+
+  const sortByYearAndAddedOrder = (a, b) => {
+    if (sortType === "new") {
+      const yearDiff = getYearNumber(b.year) - getYearNumber(a.year);
+      if (yearDiff !== 0) return yearDiff;
+      return getIdNumber(b.latestId || b.id) - getIdNumber(a.latestId || a.id);
+    }
+
+    if (sortType === "old") {
+      const yearDiff = getYearNumber(a.year) - getYearNumber(b.year);
+      if (yearDiff !== 0) return yearDiff;
+      return getIdNumber(a.oldestId || a.id) - getIdNumber(b.oldestId || b.id);
+    }
+
+    if (sortType === "count") {
+      return Number(b.totalCount || b.count || 0) - Number(a.totalCount || a.count || 0);
+    }
+
+    return 0;
+  };
 
   const filteredPhotos = useMemo(() => {
     return photos
@@ -200,13 +247,7 @@ export default function PhotoListPage() {
 
         return true;
       })
-      .sort((a, b) => {
-        if (sortType === "new") return Number(b.id || 0) - Number(a.id || 0);
-        if (sortType === "old") return Number(a.id || 0) - Number(b.id || 0);
-        if (sortType === "count") return Number(b.count || 0) - Number(a.count || 0);
-
-        return 0;
-      });
+      .sort((a, b) => sortByYearAndAddedOrder(a, b));
   }, [photos, group, member, type, year, sortType]);
 
   const totalCount = useMemo(() => {
@@ -218,13 +259,28 @@ export default function PhotoListPage() {
 
   const title = member ? member : type && year ? type : "生写真一覧";
 
+  const getBestCompleteType = (photoList, fallbackGroup) => {
+    const customCompleteType = photoList.find((photo) => Number(photo.completeType || 0) > 5)?.completeType;
+    if (customCompleteType) return customCompleteType;
+
+    const completeTypeCount = new Map();
+
+    photoList.forEach((photo) => {
+      const value = photo.completeType || getDefaultCompleteType(photo.group || fallbackGroup);
+      completeTypeCount.set(value, (completeTypeCount.get(value) || 0) + 1);
+    });
+
+    const sorted = [...completeTypeCount.entries()].sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] || getDefaultCompleteType(fallbackGroup);
+  };
+
   const groupedItems = useMemo(() => {
     const map = new Map();
 
     filteredPhotos.forEach((photo) => {
       const key = member
-        ? `${photo.year}-${photo.type}`
-        : `${photo.member}-${photo.year}-${photo.type}`;
+        ? `${photo.year}__${photo.type}`
+        : `${photo.member}__${photo.year}__${photo.type}`;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -249,28 +305,20 @@ export default function PhotoListPage() {
       item.totalCount += Number(photo.count || 0);
       item.latestId = Math.max(item.latestId, Number(photo.id || 0));
       item.oldestId = Math.min(item.oldestId, Number(photo.id || 0));
-
-      if (photo.completeType) {
-        item.completeType = photo.completeType;
-      }
+      item.year = photo.year || item.year;
 
       item.photos.push(photo);
     });
 
     const items = [...map.values()].map((item) => ({
       ...item,
+      completeType: getBestCompleteType(item.photos, group),
       photos: item.photos.sort((a, b) =>
         getPoseSortIndex(a.pose).localeCompare(getPoseSortIndex(b.pose), "ja")
       ),
     }));
 
-    return items.sort((a, b) => {
-      if (sortType === "new") return b.latestId - a.latestId;
-      if (sortType === "old") return a.oldestId - b.oldestId;
-      if (sortType === "count") return b.totalCount - a.totalCount;
-
-      return 0;
-    });
+    return items.sort((a, b) => sortByYearAndAddedOrder(a, b));
   }, [filteredPhotos, member, sortType, group]);
 
   const makeDetailUrl = (item) => {
@@ -350,7 +398,6 @@ export default function PhotoListPage() {
     if (Number(item.completeType || 0) > 5) {
       return buildCustomCompleteRows(item, photoMap, otherPhotos);
     }
-
     if (item.completeType === "3") {
       const firstRow = ["ヨリ", "チュウ", "ヒキ"].map((pose) => ({
         pose,
@@ -546,8 +593,8 @@ export default function PhotoListPage() {
               onChange={(e) => setSortType(e.target.value)}
               className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
             >
-              <option value="new">新しい順</option>
-              <option value="old">古い順</option>
+              <option value="new">年が新しい順</option>
+              <option value="old">年が古い順</option>
               <option value="count">枚数順</option>
             </select>
 
@@ -584,7 +631,6 @@ export default function PhotoListPage() {
             </div>
           </div>
         </div>
-
         {groupedItems.length === 0 ? (
           <p className="text-zinc-400">生写真が登録されていません。</p>
         ) : (
@@ -602,10 +648,10 @@ export default function PhotoListPage() {
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          <p className="font-bold text-lg leading-tight truncate">
+                          <p className="font-bold text-lg leading-tight break-words">
                             {item.title}
                           </p>
-                          <p className="text-sm text-zinc-400 mt-1 truncate">
+                          <p className="text-sm text-zinc-400 mt-1 break-words">
                             {item.sub} ・ {item.totalCount}枚
                           </p>
                         </div>
@@ -632,7 +678,10 @@ export default function PhotoListPage() {
                                   </div>
                                 )}
 
-                                <p className="text-[11px] text-center mt-1 font-bold truncate" title={slot.pose}>
+                                <p
+                                  className="text-[10px] sm:text-[11px] text-center mt-1 font-bold leading-tight break-words whitespace-normal min-h-[28px]"
+                                  title={slot.pose}
+                                >
                                   {slot.pose}
                                 </p>
 
@@ -660,7 +709,7 @@ export default function PhotoListPage() {
                     href={makeDetailUrl(item)}
                     className="block border-b border-zinc-800 py-3"
                   >
-                    <p className="font-bold text-lg leading-tight">
+                    <p className="font-bold text-lg leading-tight break-words">
                       {item.title}　【{item.sub}】
                     </p>
 
