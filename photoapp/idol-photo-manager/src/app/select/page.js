@@ -611,7 +611,7 @@ export default function SelectPage() {
                   <p className="text-[10px] text-zinc-500 mt-1 leading-4">
                     ※詳細編集の種類編集から
                     <br />
-                    表示順を変更できます
+                    　表示順を変更できます
                   </p>
                 )}
               </div>
