@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import {
@@ -35,6 +35,7 @@ export default function DetailEditTypePage() {
 
   const [typeOrder, setTypeOrder] = useState([]);
   const [draggingTypeKey, setDraggingTypeKey] = useState("");
+  const pointerDraggingTypeKeyRef = useRef("");
 
   const normalizeText = (value) => String(value || "").trim();
   const normalizeYear = (value) => String(value || "").trim();
@@ -111,6 +112,7 @@ export default function DetailEditTypePage() {
       type: normalizeText(photo.type),
       completeType: normalizeText(photo.completeType),
       pose: normalizeText(photo.pose),
+      poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
       status: photo.status || "所持",
       count: Number(photo.count || 0),
       imageUrl: photo.imageUrl || "",
@@ -135,6 +137,7 @@ export default function DetailEditTypePage() {
         type: normalizeText(photo.type),
         completeType: normalizeText(photo.completeType),
         pose: normalizeText(photo.pose),
+        poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
         status: photo.status || "所持",
         count: Number(photo.count || 0),
         hasIndexedDbImage: Boolean(
@@ -147,6 +150,11 @@ export default function DetailEditTypePage() {
       if (map.has(key)) {
         const existingPhoto = map.get(key);
 
+        const mergedPoseSetNames = [
+          ...(existingPhoto.poseSetNames || []),
+          ...(normalizedPhoto.poseSetNames || []),
+        ].filter((name, index, array) => name && array.indexOf(name) === index);
+
         map.set(key, {
           ...existingPhoto,
           count:
@@ -157,6 +165,7 @@ export default function DetailEditTypePage() {
           memberKana: normalizedPhoto.memberKana || existingPhoto.memberKana,
           completeType:
             normalizedPhoto.completeType || existingPhoto.completeType,
+          poseSetNames: mergedPoseSetNames,
           imageUrl: normalizedPhoto.imageUrl || existingPhoto.imageUrl || "",
           hasIndexedDbImage: Boolean(
             existingPhoto.hasIndexedDbImage ||
@@ -321,6 +330,44 @@ export default function DetailEditTypePage() {
     }
   }, [group, typeOptions]);
 
+  useEffect(() => {
+    if (!draggingTypeKey) return;
+
+    const handlePointerMove = (event) => {
+      if (!pointerDraggingTypeKeyRef.current) return;
+
+      event.preventDefault();
+
+      const element = document.elementFromPoint(event.clientX, event.clientY);
+      const targetElement = element?.closest?.("[data-type-key]");
+      const targetKey = targetElement?.getAttribute("data-type-key");
+      const sourceKey = pointerDraggingTypeKeyRef.current;
+
+      if (targetKey && sourceKey && targetKey !== sourceKey) {
+        reorderTypeOrder(sourceKey, targetKey);
+      }
+    };
+
+    const handlePointerUp = () => {
+      pointerDraggingTypeKeyRef.current = "";
+      setDraggingTypeKey("");
+      document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+      document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
+    };
+  }, [draggingTypeKey, orderedTypeOptions]);
+
   const savePhotos = async (updatedPhotos) => {
     const normalizedPhotos = normalizePhotos(updatedPhotos);
 
@@ -420,40 +467,12 @@ export default function DetailEditTypePage() {
     saveTypeOrder(nextOrder);
   };
 
-  const moveType = (key, direction) => {
-    const currentOrder = orderedTypeOptions.map((item) => item.key);
-    const index = currentOrder.indexOf(key);
-
-    if (index === -1) return;
-
-    const nextIndex = direction === "up" ? index - 1 : index + 1;
-
-    if (nextIndex < 0 || nextIndex >= currentOrder.length) return;
-
-    const nextOrder = [...currentOrder];
-    const temp = nextOrder[index];
-    nextOrder[index] = nextOrder[nextIndex];
-    nextOrder[nextIndex] = temp;
-
-    saveTypeOrder(nextOrder);
-  };
-
-  const moveTypeToEdge = (key, direction) => {
-    const currentOrder = orderedTypeOptions.map((item) => item.key);
-    const index = currentOrder.indexOf(key);
-
-    if (index === -1) return;
-
-    const nextOrder = [...currentOrder];
-    const [movedItem] = nextOrder.splice(index, 1);
-
-    if (direction === "top") {
-      nextOrder.unshift(movedItem);
-    } else {
-      nextOrder.push(movedItem);
-    }
-
-    saveTypeOrder(nextOrder);
+  const startPointerSort = (key, event) => {
+    event.preventDefault();
+    pointerDraggingTypeKeyRef.current = key;
+    setDraggingTypeKey(key);
+    document.body.style.userSelect = "none";
+    document.body.style.touchAction = "none";
   };
 
   const resetTypeOrder = () => {
@@ -621,6 +640,7 @@ export default function DetailEditTypePage() {
       },
     });
   };
+
   const handleDeleteType = async () => {
     if (!targetTypeForDelete) {
       alert("削除したい種類を選択してください");
@@ -912,8 +932,8 @@ export default function DetailEditTypePage() {
             <div>
               <h2 className="text-xl font-bold">種類の並び替え</h2>
               <p className="text-sm text-zinc-400 mt-2 leading-6">
-                ここで並び替えた順番が、生写真追加・まとめて画像追加・種類タブのオリジナル順に反映されます。
-                同じアカウントなら別端末にも反映されます。
+                右側の「☰」を押したまま上下に動かすと、スマホでも並び替えできます。
+                並び順は生写真追加・まとめて画像追加・種類タブのオリジナル順に反映されます。
               </p>
             </div>
 
@@ -933,79 +953,43 @@ export default function DetailEditTypePage() {
               {orderedTypeOptions.map((item, index) => (
                 <div
                   key={item.key}
-                  draggable
-                  onDragStart={() => setDraggingTypeKey(item.key)}
+                  data-type-key={item.key}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => {
                     reorderTypeOrder(draggingTypeKey, item.key);
                     setDraggingTypeKey("");
                   }}
-                  onDragEnd={() => setDraggingTypeKey("")}
-                  className={`bg-zinc-950 border rounded-2xl p-3 transition ${
+                  className={`bg-zinc-950 border rounded-2xl px-3 py-3 transition ${
                     draggingTypeKey === item.key
-                      ? "border-cyan-500 opacity-60"
+                      ? "border-cyan-500 opacity-60 scale-[0.99]"
                       : "border-zinc-800"
                   }`}
                 >
-                  <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
-                    <div className="text-zinc-500 text-sm w-7 text-center pt-1">
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 items-center">
+                    <div className="text-zinc-500 text-sm w-7 text-center">
                       {index + 1}
                     </div>
 
                     <div className="min-w-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-bold leading-tight break-words">
-                            {item.type}
-                          </p>
-                          <p className="text-xs text-zinc-400 mt-1">
-                            {item.year}年 ・ {item.totalCount}枚 ・ {item.memberCount}人
-                          </p>
-                        </div>
-
-                        <div className="text-zinc-500 text-xl cursor-grab active:cursor-grabbing select-none shrink-0 hidden sm:block">
-                          ☰
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2 mt-3">
-                        <button
-                          type="button"
-                          onClick={() => moveTypeToEdge(item.key, "top")}
-                          disabled={index === 0}
-                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-xs font-bold"
-                        >
-                          一番上
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => moveType(item.key, "up")}
-                          disabled={index === 0}
-                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-sm font-bold"
-                        >
-                          ↑
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => moveType(item.key, "down")}
-                          disabled={index === orderedTypeOptions.length - 1}
-                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-sm font-bold"
-                        >
-                          ↓
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => moveTypeToEdge(item.key, "bottom")}
-                          disabled={index === orderedTypeOptions.length - 1}
-                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-xs font-bold"
-                        >
-                          一番下
-                        </button>
-                      </div>
+                      <p className="font-bold leading-tight break-words">
+                        {item.type}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-1">
+                        {item.year}年 ・ {item.totalCount}枚 ・ {item.memberCount}人
+                      </p>
                     </div>
+
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={() => setDraggingTypeKey(item.key)}
+                      onDragEnd={() => setDraggingTypeKey("")}
+                      onPointerDown={(event) => startPointerSort(item.key, event)}
+                      className="w-11 h-11 rounded-2xl bg-zinc-800 border border-zinc-700 text-zinc-400 text-xl cursor-grab active:cursor-grabbing select-none touch-none shrink-0 active:scale-[0.96] transition"
+                      aria-label={`${item.type}を並び替え`}
+                    >
+                      ☰
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1013,7 +997,7 @@ export default function DetailEditTypePage() {
           )}
 
           <p className="text-xs text-zinc-500 mt-4 leading-5">
-            ※スマホではドラッグよりも「一番上」「↑」「↓」「一番下」ボタンでの並び替えがおすすめです。
+            ※スマホでは「☰」部分を押したまま上下に動かしてください。カード全体ではなく、右側の持ち手を使うと誤操作しにくいです。
           </p>
         </div>
       </div>

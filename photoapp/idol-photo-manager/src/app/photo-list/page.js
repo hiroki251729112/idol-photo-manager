@@ -86,6 +86,9 @@ export default function PhotoListPage() {
       type: normalizeText(photo.type),
       completeType: normalizeText(photo.completeType),
       pose: normalizeText(photo.pose),
+      poseSetNames: Array.isArray(photo.poseSetNames)
+        ? photo.poseSetNames.map((name) => normalizeText(name)).filter(Boolean)
+        : [],
       count: Number(photo.count || 0),
     }));
   };
@@ -275,6 +278,30 @@ export default function PhotoListPage() {
     return sorted[0]?.[0] || getDefaultCompleteType(fallbackGroup);
   };
 
+  const getPoseSetNamesFromItem = (item) => {
+    const names = [];
+
+    item.photos.forEach((photo) => {
+      if (Array.isArray(photo.poseSetNames)) {
+        photo.poseSetNames.forEach((name) => {
+          const safeName = normalizeText(name);
+          if (safeName && !names.includes(safeName)) {
+            names.push(safeName);
+          }
+        });
+      }
+
+      const setName = getPoseSetName(photo.pose);
+      const basePose = getPoseBase(photo.pose);
+
+      if (setName && basePoseOrder.includes(basePose) && !names.includes(setName)) {
+        names.push(setName);
+      }
+    });
+
+    return names;
+  };
+
   const groupedItems = useMemo(() => {
     const map = new Map();
 
@@ -336,26 +363,18 @@ export default function PhotoListPage() {
     return `/photo-detail/${firstPhoto.id}?${params.toString()}`;
   };
 
-  const getCustomPoseSetNames = (item) => {
-    const existingSetNames = [];
-
-    item.photos.forEach((photo) => {
-      const setName = getPoseSetName(photo.pose);
-      if (setName && !existingSetNames.includes(setName)) {
-        existingSetNames.push(setName);
-      }
-    });
-
-    return existingSetNames;
-  };
-
   const buildCustomCompleteRows = (item, photoMap, otherPhotos) => {
     const completeCount = Number(item.completeType || 0);
     const rowCount = Math.max(1, Math.ceil(completeCount / 4));
-    const existingSetNames = getCustomPoseSetNames(item);
+    const poseSetNames = getPoseSetNamesFromItem(item);
+    const fixedPoseSetNames = [...poseSetNames];
+
+    while (fixedPoseSetNames.length < rowCount) {
+      fixedPoseSetNames.push("");
+    }
 
     const rows = Array.from({ length: rowCount }, (_, rowIndex) => {
-      const setName = existingSetNames[rowIndex] || existingSetNames[0] || "";
+      const setName = fixedPoseSetNames[rowIndex] || "";
 
       return basePoseOrder.map((pose) => {
         const poseName = setName ? `${pose}（${setName}）` : pose;
@@ -391,7 +410,10 @@ export default function PhotoListPage() {
     });
 
     const otherPhotos = item.photos
-      .filter((photo) => !allStandardPoseOrder.includes(photo.pose))
+      .filter((photo) => {
+        const basePose = getPoseBase(photo.pose);
+        return !basePoseOrder.includes(basePose) && !allStandardPoseOrder.includes(photo.pose);
+      })
       .sort((a, b) => getPoseSortIndex(a.pose).localeCompare(getPoseSortIndex(b.pose), "ja"));
 
     if (item.completeType === "other") {

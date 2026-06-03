@@ -608,7 +608,7 @@ export default function SelectPage() {
                 </select>
 
                 {typeSort === "original" && (
-                  <p className="text-[10px] text-zinc-500 mt-1 leading-4 text-right">
+                  <p className="text-[10px] text-zinc-500 mt-1 leading-4 whitespace-nowrap">
                     ※詳細編集の種類編集から表示順を変更できます
                   </p>
                 )}

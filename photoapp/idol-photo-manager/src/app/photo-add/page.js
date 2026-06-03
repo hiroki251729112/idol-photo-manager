@@ -100,7 +100,13 @@ export default function PhotoAddPage() {
 
   const basePoseList = ["ヨリ", "チュウ", "ヒキ", "座り"];
   const isCustomCompleteType = completeType === "custom";
-  const actualCompleteType = isCustomCompleteType ? String(poseSets.length * 4) : completeType;
+  const activePoseSetNames = useMemo(
+    () => poseSets.map((set) => set.name.trim()).filter(Boolean),
+    [poseSets]
+  );
+  const actualCompleteType = isCustomCompleteType
+    ? String(activePoseSetNames.length * 4 || poseSets.length * 4)
+    : completeType;
 
   const normalizeText = (value) => String(value || "").trim();
   const normalizeYear = (value) => String(value || "").trim();
@@ -112,6 +118,11 @@ export default function PhotoAddPage() {
   const getPoseSetName = (pose) => {
     const match = String(pose || "").match(/^.+?（(.+)）$/);
     return match ? match[1] : "";
+  };
+
+  const getSafePoseSetNames = () => {
+    if (!isCustomCompleteType) return [];
+    return poseSets.map((set) => set.name.trim()).filter(Boolean);
   };
 
   const completeTypeOptions = useMemo(() => {
@@ -252,12 +263,23 @@ export default function PhotoAddPage() {
       );
 
       if (existingIndex !== -1) {
-        normalizedPhotos[existingIndex].count = Number(normalizedPhotos[existingIndex].count || 0) + Number(photo.count || 0);
+        normalizedPhotos[existingIndex].count =
+          Number(normalizedPhotos[existingIndex].count || 0) +
+          Number(photo.count || 0);
         normalizedPhotos[existingIndex].status = photo.status || "所持";
         if (photo.imageUrl) normalizedPhotos[existingIndex].imageUrl = photo.imageUrl;
         if (photo.memberKana) normalizedPhotos[existingIndex].memberKana = normalizeText(photo.memberKana);
         if (photo.completeType) normalizedPhotos[existingIndex].completeType = normalizeText(photo.completeType);
         if (photo.hasIndexedDbImage) normalizedPhotos[existingIndex].hasIndexedDbImage = true;
+
+        const mergedPoseSetNames = [
+          ...(normalizedPhotos[existingIndex].poseSetNames || []),
+          ...(Array.isArray(photo.poseSetNames) ? photo.poseSetNames : []),
+        ].filter((name, index, array) => name && array.indexOf(name) === index);
+
+        if (mergedPoseSetNames.length > 0) {
+          normalizedPhotos[existingIndex].poseSetNames = mergedPoseSetNames;
+        }
       } else {
         const { image, ...photoWithoutImage } = photo;
         normalizedPhotos.push({
@@ -271,6 +293,7 @@ export default function PhotoAddPage() {
           type: normalizeText(photo.type),
           completeType: normalizeText(photo.completeType),
           pose: normalizeText(photo.pose),
+          poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
           count: Number(photo.count || 0),
           status: photo.status || "所持",
         });
@@ -290,6 +313,7 @@ export default function PhotoAddPage() {
     type: normalizeText(photo.type),
     completeType: normalizeText(photo.completeType),
     pose: normalizeText(photo.pose),
+    poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
     status: photo.status || "所持",
     count: Number(photo.count || 0),
     imageUrl: photo.imageUrl || "",
@@ -371,8 +395,17 @@ export default function PhotoAddPage() {
         }
 
         const typeItem = typeMap.get(key);
-        const setName = getPoseSetName(photo.pose);
 
+        if (Array.isArray(photo.poseSetNames)) {
+          photo.poseSetNames.forEach((name) => {
+            const safeName = normalizeText(name);
+            if (safeName && !typeItem.poseSetNames.includes(safeName)) {
+              typeItem.poseSetNames.push(safeName);
+            }
+          });
+        }
+
+        const setName = getPoseSetName(photo.pose);
         if (setName && !typeItem.poseSetNames.includes(setName)) {
           typeItem.poseSetNames.push(setName);
         }
@@ -659,7 +692,7 @@ export default function PhotoAddPage() {
     const names = poseSets.map((set) => set.name.trim());
     const hasEmpty = names.some((name) => !name);
     if (hasEmpty) {
-      alert("〇種類コンプでは、すべてのポーズ種類名を入力してください。例：ドレス");
+      alert("〇種類コンプでは、すべてのポーズ種類名を入力してください。例：白、赤");
       return false;
     }
 
@@ -688,6 +721,7 @@ export default function PhotoAddPage() {
     const finalMember = member === "__new__" ? newMember.trim() : member.trim();
     const finalType = type.trim();
     const finalMemberKana = member === "__new__" ? newMemberKana.trim() : memberKanaMap[member] || "";
+    const safePoseSetNames = getSafePoseSetNames();
 
     if (!user) return alert("ログイン情報を確認できません。再ログインしてください。");
     if (!finalMember) return alert("メンバーを選択してください");
@@ -740,6 +774,7 @@ export default function PhotoAddPage() {
           type: finalType,
           completeType: actualCompleteType,
           pose: poseItem.pose,
+          poseSetNames: isCustomCompleteType ? safePoseSetNames : [],
           status: "所持",
           count: Number(poseItem.count),
           hasIndexedDbImage: Boolean(poseItem.image),
@@ -762,6 +797,7 @@ export default function PhotoAddPage() {
             photos[existingPhotoIndex].status = "所持";
             photos[existingPhotoIndex].generation = generation;
             photos[existingPhotoIndex].completeType = actualCompleteType;
+            photos[existingPhotoIndex].poseSetNames = isCustomCompleteType ? safePoseSetNames : [];
             if (finalMemberKana) photos[existingPhotoIndex].memberKana = finalMemberKana;
             if (poseItem.image) photos[existingPhotoIndex].hasIndexedDbImage = true;
           } else {
@@ -903,7 +939,7 @@ export default function PhotoAddPage() {
                         <button type="button" onClick={() => removePoseSet(set.id)} disabled={poseSets.length <= 1} className="bg-zinc-800 disabled:text-zinc-600 text-red-300 border border-zinc-700 rounded-2xl px-3 py-2 text-sm">削除</button>
                       </div>
 
-                      <input type="text" value={set.name} onChange={(e) => updatePoseSetName(set.id, e.target.value)} placeholder="ポーズ種類名（例：ドレス）" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm mb-4" />
+                      <input type="text" value={set.name} onChange={(e) => updatePoseSetName(set.id, e.target.value)} placeholder="ポーズ種類名（例：白）" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm mb-4" />
 
                       <div className="grid gap-5 md:grid-cols-2">
                         {setPoseNames.map((pose) => renderNormalPoseInput(pose))}

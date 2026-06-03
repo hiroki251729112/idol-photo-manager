@@ -125,8 +125,15 @@ export default function PhotoBulkCropPage() {
   ];
 
   const isCustomCompleteType = completeType === "custom";
-  const actualCompleteType = isCustomCompleteType ? String(poseSetNames.length * 4) : completeType;
-  const activePoseSetNames = useMemo(() => poseSetNames.map((name) => name.trim()).filter(Boolean), [poseSetNames]);
+
+  const activePoseSetNames = useMemo(
+    () => poseSetNames.map((name) => name.trim()).filter(Boolean),
+    [poseSetNames]
+  );
+
+  const actualCompleteType = isCustomCompleteType
+    ? String(activePoseSetNames.length * 4 || poseSetNames.length * 4)
+    : completeType;
 
   const getDefaultCompleteType = (targetGroup) => {
     return targetGroup === "乃木坂46" ? "3" : "4";
@@ -135,6 +142,11 @@ export default function PhotoBulkCropPage() {
   const getPoseSetName = (pose) => {
     const match = String(pose || "").match(/^.+?（(.+)）$/);
     return match ? match[1] : "";
+  };
+
+  const getSafePoseSetNames = () => {
+    if (!isCustomCompleteType) return [];
+    return poseSetNames.map((name) => name.trim()).filter(Boolean);
   };
 
   const completeTypeOptions = useMemo(() => {
@@ -280,8 +292,13 @@ export default function PhotoBulkCropPage() {
     const cols = Math.max(1, Number(gridCols || 1));
     const rows = Math.max(1, Number(gridRows || 1));
 
-    const xLines = Array.from({ length: Math.max(0, cols - 1) }, (_, index) => Number((((index + 1) / cols) * 100).toFixed(4)));
-    const yLines = Array.from({ length: Math.max(0, rows - 1) }, (_, index) => Number((((index + 1) / rows) * 100).toFixed(4)));
+    const xLines = Array.from({ length: Math.max(0, cols - 1) }, (_, index) =>
+      Number((((index + 1) / cols) * 100).toFixed(4))
+    );
+
+    const yLines = Array.from({ length: Math.max(0, rows - 1) }, (_, index) =>
+      Number((((index + 1) / rows) * 100).toFixed(4))
+    );
 
     setInnerXLines(xLines);
     setInnerYLines(yLines);
@@ -393,11 +410,22 @@ export default function PhotoBulkCropPage() {
       );
 
       if (existingIndex !== -1) {
-        normalizedPhotos[existingIndex].count = Number(normalizedPhotos[existingIndex].count || 0) + Number(photo.count || 0);
+        normalizedPhotos[existingIndex].count =
+          Number(normalizedPhotos[existingIndex].count || 0) +
+          Number(photo.count || 0);
         normalizedPhotos[existingIndex].status = photo.status || "所持";
         if (photo.memberKana) normalizedPhotos[existingIndex].memberKana = photo.memberKana;
         if (photo.completeType) normalizedPhotos[existingIndex].completeType = photo.completeType;
         if (photo.hasIndexedDbImage) normalizedPhotos[existingIndex].hasIndexedDbImage = true;
+
+        const mergedPoseSetNames = [
+          ...(normalizedPhotos[existingIndex].poseSetNames || []),
+          ...(Array.isArray(photo.poseSetNames) ? photo.poseSetNames : []),
+        ].filter((name, index, array) => name && array.indexOf(name) === index);
+
+        if (mergedPoseSetNames.length > 0) {
+          normalizedPhotos[existingIndex].poseSetNames = mergedPoseSetNames;
+        }
       } else {
         const { image, ...photoWithoutImage } = photo;
         normalizedPhotos.push({
@@ -405,6 +433,7 @@ export default function PhotoBulkCropPage() {
           id: String(photo.id || Date.now() + Math.random()),
           count: Number(photo.count || 0),
           status: photo.status || "所持",
+          poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
         });
       }
     });
@@ -423,6 +452,7 @@ export default function PhotoBulkCropPage() {
       type: photo.type || "",
       completeType: photo.completeType || "",
       pose: photo.pose || "",
+      poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
       status: photo.status || "所持",
       count: Number(photo.count || 0),
       imageUrl: photo.imageUrl || "",
@@ -506,6 +536,16 @@ export default function PhotoBulkCropPage() {
         }
 
         const typeItem = typeMap.get(key);
+
+        if (Array.isArray(photo.poseSetNames)) {
+          photo.poseSetNames.forEach((name) => {
+            const safeName = String(name || "").trim();
+            if (safeName && !typeItem.poseSetNames.includes(safeName)) {
+              typeItem.poseSetNames.push(safeName);
+            }
+          });
+        }
+
         const setName = getPoseSetName(photo.pose);
 
         if (setName && !typeItem.poseSetNames.includes(setName)) {
@@ -678,6 +718,7 @@ export default function PhotoBulkCropPage() {
 
     return item.image || "";
   };
+
   const makeZoomView = (rect) => {
     if (!imageSize.width || !imageSize.height) return null;
 
@@ -873,7 +914,7 @@ export default function PhotoBulkCropPage() {
     if (nextItem) setActiveCropId(nextItem.id);
   };
 
-  const closeNewMemberAndTypeInputsAfterSave = (finalMember, finalMemberKana, finalType) => {
+  const closeNewMemberAndTypeInputsAfterSave = (finalMember, finalMemberKana, finalType, safePoseSetNames) => {
     if (member === "__new__") {
       setMemberOptions((prev) => {
         const exists = prev.some((item) => item.member === finalMember);
@@ -890,7 +931,18 @@ export default function PhotoBulkCropPage() {
     if (typeSelect === "__new__") {
       setTypeOptions((prev) => {
         const exists = prev.some((item) => item.type === finalType && item.year === year);
-        return exists ? prev : [{ type: finalType, year, latestId: Date.now(), completeType: actualCompleteType, poseSetNames: activePoseSetNames }, ...prev];
+        return exists
+          ? prev
+          : [
+              {
+                type: finalType,
+                year,
+                latestId: Date.now(),
+                completeType: actualCompleteType,
+                poseSetNames: isCustomCompleteType ? safePoseSetNames : [],
+              },
+              ...prev,
+            ];
       });
       setTypeSelect(`${year}__${finalType}`);
       setType(finalType);
@@ -901,14 +953,15 @@ export default function PhotoBulkCropPage() {
     const finalMember = member === "__new__" ? newMember.trim() : member.trim();
     const finalType = type.trim();
     const finalMemberKana = member === "__new__" ? newMemberKana.trim() : memberKanaMap[member] || "";
+    const safePoseSetNames = getSafePoseSetNames();
 
     if (!user) return alert("ログイン情報を確認できません。再ログインしてください。");
     if (!finalMember) return alert("メンバーを選択してください");
     if (member === "__new__" && !finalMemberKana) return alert("メンバーのふりがなを入力してください");
     if (!finalType) return alert("種類を入力してください");
 
-    if (isCustomCompleteType && activePoseSetNames.length === 0) {
-      return alert("〇種類コンプでは、登録情報のポーズ種類名を1つ以上入力してください。例：ドレス");
+    if (isCustomCompleteType && safePoseSetNames.length === 0) {
+      return alert("〇種類コンプでは、登録情報のポーズ種類名を1つ以上入力してください。例：白、赤");
     }
 
     const selectedItemsForSave = croppedItems.filter((item) => item.selected);
@@ -954,6 +1007,7 @@ export default function PhotoBulkCropPage() {
           type: finalType,
           completeType: actualCompleteType,
           pose: finalPose,
+          poseSetNames: isCustomCompleteType ? safePoseSetNames : [],
           status: "所持",
           count,
           hasIndexedDbImage: Boolean(stableImage),
@@ -979,6 +1033,7 @@ export default function PhotoBulkCropPage() {
             photos[existingPhotoIndex].status = "所持";
             photos[existingPhotoIndex].generation = generation;
             photos[existingPhotoIndex].completeType = actualCompleteType;
+            photos[existingPhotoIndex].poseSetNames = isCustomCompleteType ? safePoseSetNames : [];
 
             if (finalMemberKana) {
               photos[existingPhotoIndex].memberKana = finalMemberKana;
@@ -1008,7 +1063,7 @@ export default function PhotoBulkCropPage() {
       );
 
       await saveUserPhotos(user.uid, firestorePhotos);
-      closeNewMemberAndTypeInputsAfterSave(finalMember, finalMemberKana, finalType);
+      closeNewMemberAndTypeInputsAfterSave(finalMember, finalMemberKana, finalType, safePoseSetNames);
 
       if (continueRegister) {
         const savedIds = selectedItemsForSave.map((item) => item.id);
@@ -1028,6 +1083,7 @@ export default function PhotoBulkCropPage() {
       setIsSaving(false);
     }
   };
+
   const renderAdjustArea = (item) => {
     const itemBox = getSingleBoxPercentInZoom(item);
     const zoomView = getZoomViewRect(item);
@@ -1264,7 +1320,7 @@ export default function PhotoBulkCropPage() {
                         type="text"
                         value={name}
                         onChange={(e) => updatePoseSetName(index, e.target.value)}
-                        placeholder={`種類名${index + 1}（例：ドレス）`}
+                        placeholder={`種類名${index + 1}（例：白）`}
                         className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm"
                       />
                       <button

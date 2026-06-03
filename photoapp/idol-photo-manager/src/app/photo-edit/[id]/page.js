@@ -93,7 +93,15 @@ export default function PhotoEditPage() {
   const basePoseList = ["ヨリ", "チュウ", "ヒキ", "座り"];
   const allStandardPoseList = ["ヨリ", "チュウ", "ヒキ", "座り", "座りヨリ"];
   const isCustomCompleteType = completeType === "custom";
-  const actualCompleteType = isCustomCompleteType ? String(poseSets.length * 4) : completeType;
+
+  const activePoseSetNames = useMemo(
+    () => poseSets.map((set) => set.name.trim()).filter(Boolean),
+    [poseSets]
+  );
+
+  const actualCompleteType = isCustomCompleteType
+    ? String(activePoseSetNames.length * 4 || poseSets.length * 4)
+    : completeType;
 
   const completeTypeOptions = useMemo(() => {
     const common = [
@@ -128,6 +136,11 @@ export default function PhotoEditPage() {
   const getPoseSetName = (pose) => {
     const match = String(pose || "").match(/^(.+?)（(.+)）$/);
     return match ? match[2] : "";
+  };
+
+  const getSafePoseSetNames = () => {
+    if (!isCustomCompleteType) return [];
+    return poseSets.map((set) => set.name.trim()).filter(Boolean);
   };
 
   const normalPoseList = useMemo(() => {
@@ -197,6 +210,7 @@ export default function PhotoEditPage() {
       })
     );
   };
+
   const removeImageForFirestore = (photo) => ({
     id: String(photo.id || photo.firestoreId || Date.now() + Math.random()),
     group: photo.group || "",
@@ -207,6 +221,7 @@ export default function PhotoEditPage() {
     type: photo.type || "",
     completeType: photo.completeType || "",
     pose: photo.pose || "",
+    poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
     status: photo.status || "所持",
     count: Number(photo.count || 0),
     imageUrl: photo.imageUrl || "",
@@ -234,6 +249,15 @@ export default function PhotoEditPage() {
         if (photo.imageUrl) normalizedPhotos[existingIndex].imageUrl = photo.imageUrl;
         if (photo.memberKana) normalizedPhotos[existingIndex].memberKana = photo.memberKana;
         if (photo.hasIndexedDbImage) normalizedPhotos[existingIndex].hasIndexedDbImage = true;
+
+        const mergedPoseSetNames = [
+          ...(normalizedPhotos[existingIndex].poseSetNames || []),
+          ...(Array.isArray(photo.poseSetNames) ? photo.poseSetNames : []),
+        ].filter((name, index, array) => name && array.indexOf(name) === index);
+
+        if (mergedPoseSetNames.length > 0) {
+          normalizedPhotos[existingIndex].poseSetNames = mergedPoseSetNames;
+        }
       } else {
         const { image, ...photoWithoutImage } = photo;
         normalizedPhotos.push({
@@ -241,6 +265,7 @@ export default function PhotoEditPage() {
           id: String(photo.id || photo.firestoreId || Date.now() + Math.random()),
           count: Number(photo.count || 0),
           status: photo.status || "所持",
+          poseSetNames: Array.isArray(photo.poseSetNames) ? photo.poseSetNames : [],
         });
       }
     });
@@ -316,9 +341,20 @@ export default function PhotoEditPage() {
     }
 
     const inferredSetNames = [];
+
     targetGroupPhotos.forEach((photo) => {
+      if (Array.isArray(photo.poseSetNames)) {
+        photo.poseSetNames.forEach((name) => {
+          const safeName = String(name || "").trim();
+          if (safeName && !inferredSetNames.includes(safeName)) {
+            inferredSetNames.push(safeName);
+          }
+        });
+      }
+
       const setName = getPoseSetName(photo.pose);
       const basePose = getPoseBase(photo.pose);
+
       if (setName && basePoseList.includes(basePose) && !inferredSetNames.includes(setName)) {
         inferredSetNames.push(setName);
       }
@@ -491,7 +527,8 @@ export default function PhotoEditPage() {
       }
       return updated;
     });
-  };  
+  };
+
   const openCropEditor = ({ kind, pose, index, setId, sourceImage }) => {
     setCropTarget({ kind, pose, index, setId, sourceImage });
     setCropImageSize({ width: 0, height: 0 });
@@ -612,15 +649,19 @@ export default function PhotoEditPage() {
 
   const validateCustomPoseSets = () => {
     if (!isCustomCompleteType) return true;
+
     const names = poseSets.map((set) => set.name.trim());
+
     if (names.some((name) => !name)) {
-      alert("〇種類コンプでは、すべてのポーズ種類名を入力してください。例：ドレス");
+      alert("〇種類コンプでは、すべてのポーズ種類名を入力してください。例：白、赤");
       return false;
     }
+
     if (new Set(names).size !== names.length) {
       alert("ポーズ種類名が重複しています。別の名前を入力してください。");
       return false;
     }
+
     return true;
   };
 
@@ -638,10 +679,13 @@ export default function PhotoEditPage() {
   const buildUpdates = () => {
     if (!validateCustomPoseSets()) return null;
 
+    const safePoseSetNames = getSafePoseSetNames();
+
     const normalPoseUpdates = normalPoseList
       .map((pose) => ({
         id: normalPoseExistingIds[pose] || null,
         pose,
+        poseSetNames: safePoseSetNames,
         count: normalPoseCounts[pose] === "" || normalPoseCounts[pose] == null ? 0 : Number(normalPoseCounts[pose]),
         image: normalPoseImages[pose] || "",
       }))
@@ -662,6 +706,7 @@ export default function PhotoEditPage() {
     const otherPoseUpdates = filledOtherPoses.map((item) => ({
       id: item.id,
       pose: item.setName ? `${item.name.trim()}（${item.setName}）` : item.name.trim(),
+      poseSetNames: safePoseSetNames,
       count: Number(item.count),
       image: item.image || "",
     }));
@@ -690,6 +735,7 @@ export default function PhotoEditPage() {
     const processedPhotoIds = new Set();
     const processedPoseNames = new Set();
     const updatedPhotos = [];
+    const safePoseSetNames = getSafePoseSetNames();
 
     sourcePhotos.forEach((photo) => {
       if (!isSameOriginalGroup(photo)) {
@@ -712,6 +758,7 @@ export default function PhotoEditPage() {
           memberKana,
           type,
           completeType: actualCompleteType,
+          poseSetNames: isCustomCompleteType ? safePoseSetNames : [],
         });
         return;
       }
@@ -734,6 +781,7 @@ export default function PhotoEditPage() {
         type,
         completeType: actualCompleteType,
         pose: updateItem.pose,
+        poseSetNames: isCustomCompleteType ? updateItem.poseSetNames || [] : [],
         status: "所持",
         count: Number(updateItem.count),
         hasIndexedDbImage: Boolean(updateItem.image || photo.hasIndexedDbImage),
@@ -764,6 +812,7 @@ export default function PhotoEditPage() {
         type,
         completeType: actualCompleteType,
         pose: updateItem.pose,
+        poseSetNames: isCustomCompleteType ? updateItem.poseSetNames || [] : [],
         status: "所持",
         count: Number(updateItem.count),
         hasIndexedDbImage: Boolean(updateItem.image),
@@ -801,6 +850,7 @@ export default function PhotoEditPage() {
       const photosForImageSave = localResult.photos;
       const imageSaveTasks = [];
       const imageDeleteTasks = [];
+
       updates.forEach((updateItem) => {
         const targetPhoto = photosForImageSave.find(
           (photo) => photo.group === group && photo.year === year && photo.member === member && photo.type === type && photo.pose === updateItem.pose
@@ -940,7 +990,7 @@ export default function PhotoEditPage() {
                         <button type="button" onClick={() => removePoseSet(set.id)} disabled={poseSets.length <= 1} className="bg-zinc-800 disabled:text-zinc-600 text-red-300 border border-zinc-700 rounded-2xl px-3 py-2 text-sm">削除</button>
                       </div>
 
-                      <input type="text" value={set.name} onChange={(e) => updatePoseSetName(set.id, e.target.value)} placeholder="ポーズ種類名（例：ドレス）" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm mb-4" />
+                      <input type="text" value={set.name} onChange={(e) => updatePoseSetName(set.id, e.target.value)} placeholder="ポーズ種類名（例：白）" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm mb-4" />
 
                       <div className="grid gap-5 md:grid-cols-2">
                         {setPoseNames.map((pose) => renderNormalPoseInput(pose))}
