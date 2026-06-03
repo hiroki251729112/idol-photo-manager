@@ -291,6 +291,7 @@ export default function SelectPage() {
 
     return -999;
   };
+
   const generations = useMemo(() => {
     return [
       ...new Set(
@@ -395,7 +396,7 @@ export default function SelectPage() {
         return items.sort((a, b) => {
           const yearDiff = Number(b.year || 0) - Number(a.year || 0);
           if (yearDiff !== 0) return yearDiff;
-          return Number(b.latestId || 0) - Number(a.latestId || a.id || 0);
+          return Number(b.latestId || 0) - Number(a.latestId || 0);
         });
     }
   }, [filteredByGroup, yearFilter, typeSort, typeOrder]);
@@ -580,12 +581,13 @@ export default function SelectPage() {
 
             <Link
               href={`/export?group=${encodeURIComponent(group || "櫻坂46")}&mode=${viewMode}`}
-              className="block bg-zinc-900 text-zinc-100 rounded-2xl py-3 font-bold text-center border border-zinc-700 active:scale-[0.98] transition"
+              className="block bg-cyan-500 text-black rounded-2xl py-3 font-bold text-center border border-cyan-400 active:scale-[0.98] transition"
             >
               一覧画像を作成
             </Link>
           </div>
         </div>
+
         <div className="flex items-start justify-between mb-3 gap-3">
           <p className="text-sm text-zinc-400 pt-2 whitespace-nowrap">
             {viewMode === "type" ? "年で絞り込み" : "期生で絞り込み"}

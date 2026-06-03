@@ -49,9 +49,9 @@ function CountSelector({ value, onChange }) {
   );
 }
 
-const createPoseSet = () => ({
+const createPoseSet = (name = "") => ({
   id: String(Date.now() + Math.random()),
-  name: "",
+  name,
   otherPoses: [{ name: "", count: "", image: "" }],
 });
 
@@ -104,6 +104,15 @@ export default function PhotoAddPage() {
 
   const normalizeText = (value) => String(value || "").trim();
   const normalizeYear = (value) => String(value || "").trim();
+
+  const getDefaultCompleteType = (targetGroup) => {
+    return targetGroup === "乃木坂46" ? "3" : "4";
+  };
+
+  const getPoseSetName = (pose) => {
+    const match = String(pose || "").match(/^.+?（(.+)）$/);
+    return match ? match[1] : "";
+  };
 
   const completeTypeOptions = useMemo(() => {
     const common = [
@@ -226,7 +235,7 @@ export default function PhotoAddPage() {
       (item) => !savedOrder.includes(`${item.year}__${item.type}`)
     );
 
-    return [...orderedItems, ...missingItems];
+    return [...missingItems, ...orderedItems];
   };
 
   const normalizePhotos = (photos) => {
@@ -287,6 +296,28 @@ export default function PhotoAddPage() {
     hasIndexedDbImage: Boolean(photo.hasIndexedDbImage),
   });
 
+  const applyCompleteTypeFromSelectedType = (selectedType, defaultCompleteType) => {
+    if (!selectedType) {
+      setCompleteType(defaultCompleteType);
+      setPoseSets([createPoseSet()]);
+      return;
+    }
+
+    if (Number(selectedType.completeType || 0) > 5) {
+      const names =
+        selectedType.poseSetNames?.length > 0
+          ? selectedType.poseSetNames
+          : [""];
+
+      setCompleteType("custom");
+      setPoseSets(names.map((name) => createPoseSet(name)));
+      return;
+    }
+
+    setCompleteType(selectedType.completeType || defaultCompleteType);
+    setPoseSets([createPoseSet()]);
+  };
+
   const setupOptionsFromPhotos = async (photos, selectedGroup, defaultCompleteType, currentUser) => {
     const savedTypeOrder = await loadTypeOrder(currentUser, selectedGroup);
 
@@ -328,10 +359,22 @@ export default function PhotoAddPage() {
             type: normalizedType,
             year: normalizedYear,
             latestId: Number(photo.id || 0),
+            completeType: normalizeText(photo.completeType),
+            poseSetNames: [],
           });
         } else {
           const item = typeMap.get(key);
           item.latestId = Math.max(item.latestId, Number(photo.id || 0));
+          if (Number(photo.completeType || 0) > Number(item.completeType || 0)) {
+            item.completeType = normalizeText(photo.completeType);
+          }
+        }
+
+        const typeItem = typeMap.get(key);
+        const setName = getPoseSetName(photo.pose);
+
+        if (setName && !typeItem.poseSetNames.includes(setName)) {
+          typeItem.poseSetNames.push(setName);
         }
       }
     });
@@ -363,21 +406,31 @@ export default function PhotoAddPage() {
       setMember(lastInput.member || "");
       setType(lastType);
 
-      const lastTypeExists = sortedTypeOptions.some((item) => item.type === lastType && item.year === lastYear);
-      setTypeSelect(lastTypeExists ? `${lastYear}__${lastType}` : "__new__");
-      setCompleteType(lastInput.completeType && Number(lastInput.completeType) > 5 ? "custom" : lastInput.completeType || defaultCompleteType);
+      const selectedType = sortedTypeOptions.find((item) => item.type === lastType && item.year === lastYear);
+
+      if (selectedType) {
+        setTypeSelect(`${lastYear}__${lastType}`);
+        applyCompleteTypeFromSelectedType(selectedType, defaultCompleteType);
+      } else {
+        setTypeSelect("__new__");
+        setCompleteType(defaultCompleteType);
+        setPoseSets([createPoseSet()]);
+      }
     } else {
       setTypeSelect("__new__");
+      setCompleteType(defaultCompleteType);
+      setPoseSets([createPoseSet()]);
     }
   };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const selectedGroup = params.get("group") || "櫻坂46";
-    const defaultCompleteType = selectedGroup === "乃木坂46" ? "3" : "4";
+    const defaultCompleteType = getDefaultCompleteType(selectedGroup);
 
     setGroup(selectedGroup);
     setCompleteType(defaultCompleteType);
+    setPoseSets([createPoseSet()]);
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -414,10 +467,14 @@ export default function PhotoAddPage() {
   };
 
   const handleTypeSelectChange = (value) => {
+    const defaultCompleteType = getDefaultCompleteType(group);
+
     setTypeSelect(value);
 
     if (value === "__new__") {
       setType("");
+      setCompleteType(defaultCompleteType);
+      setPoseSets([createPoseSet()]);
       return;
     }
 
@@ -426,6 +483,7 @@ export default function PhotoAddPage() {
     if (selectedType) {
       setType(selectedType.type);
       if (selectedType.year) setYear(selectedType.year);
+      applyCompleteTypeFromSelectedType(selectedType, defaultCompleteType);
     }
   };
 
@@ -719,7 +777,7 @@ export default function PhotoAddPage() {
       localPhotos = normalizePhotos(localPhotos);
       firestorePhotos = normalizePhotos(firestorePhotos).map(removeImageForFirestore);
       localStorage.setItem("photos", JSON.stringify(localPhotos));
-      localStorage.setItem(`lastPhotoInput_${group}`, JSON.stringify({ year, generation, member: finalMember, type: finalType, completeType: actualCompleteType }));
+      localStorage.setItem(`lastPhotoInput_${group}`, JSON.stringify({ year, generation, member: finalMember, type: finalType }));
       await saveUserPhotos(user.uid, firestorePhotos);
       alert("保存しました");
       router.push(`/select?group=${encodeURIComponent(group)}&mode=member`);
@@ -796,7 +854,7 @@ export default function PhotoAddPage() {
                 <option value="__new__">＋ 新しく入力</option>
                 {typeOptions.map((item) => (
                   <option key={`${item.year}__${item.type}`} value={`${item.year}__${item.type}`}>
-                    {item.year ? `${item.year}年　` : ""}{item.type}
+                    {item.type}
                   </option>
                 ))}
               </select>

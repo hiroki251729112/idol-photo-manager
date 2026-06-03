@@ -128,6 +128,15 @@ export default function PhotoBulkCropPage() {
   const actualCompleteType = isCustomCompleteType ? String(poseSetNames.length * 4) : completeType;
   const activePoseSetNames = useMemo(() => poseSetNames.map((name) => name.trim()).filter(Boolean), [poseSetNames]);
 
+  const getDefaultCompleteType = (targetGroup) => {
+    return targetGroup === "乃木坂46" ? "3" : "4";
+  };
+
+  const getPoseSetName = (pose) => {
+    const match = String(pose || "").match(/^.+?（(.+)）$/);
+    return match ? match[1] : "";
+  };
+
   const completeTypeOptions = useMemo(() => {
     const commonOptions = [
       { value: "custom", label: "〇種類コンプ" },
@@ -162,10 +171,11 @@ export default function PhotoBulkCropPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const selectedGroup = params.get("group") || "櫻坂46";
-    const defaultCompleteType = selectedGroup === "乃木坂46" ? "3" : "4";
+    const defaultCompleteType = getDefaultCompleteType(selectedGroup);
 
     setGroup(selectedGroup);
     setCompleteType(defaultCompleteType);
+    setPoseSetNames([""]);
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -265,6 +275,7 @@ export default function PhotoBulkCropPage() {
       candidateAreaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   };
+
   const resetGridLines = () => {
     const cols = Math.max(1, Number(gridCols || 1));
     const rows = Math.max(1, Number(gridRows || 1));
@@ -280,7 +291,6 @@ export default function PhotoBulkCropPage() {
     setCropBox({ left: 2, top: 2, right: 98, bottom: 98 });
     resetGridLines();
   };
-
   const moveInnerLine = (axis, index, absolutePercent) => {
     if (axis === "x") {
       const relative = ((absolutePercent - cropBox.left) / (cropBox.right - cropBox.left)) * 100;
@@ -366,7 +376,7 @@ export default function PhotoBulkCropPage() {
       (item) => !savedOrder.includes(`${item.year}__${item.type}`)
     );
 
-    return [...orderedItems, ...missingItems];
+    return [...missingItems, ...orderedItems];
   };
 
   const normalizePhotos = (photos) => {
@@ -420,9 +430,32 @@ export default function PhotoBulkCropPage() {
     };
   };
 
+  const applyCompleteTypeFromSelectedType = (selectedType, defaultCompleteType) => {
+    if (!selectedType) {
+      setCompleteType(defaultCompleteType);
+      setPoseSetNames([""]);
+      return;
+    }
+
+    if (Number(selectedType.completeType || 0) > 5) {
+      const names =
+        selectedType.poseSetNames?.length > 0
+          ? selectedType.poseSetNames
+          : [""];
+
+      setCompleteType("custom");
+      setPoseSetNames(names);
+      return;
+    }
+
+    setCompleteType(selectedType.completeType || defaultCompleteType);
+    setPoseSetNames([""]);
+  };
+
   const loadOptions = async (selectedGroup, currentUser = null) => {
     let savedPhotos = [];
     const savedTypeOrder = await loadTypeOrder(currentUser, selectedGroup);
+    const defaultCompleteType = getDefaultCompleteType(selectedGroup);
 
     try {
       if (currentUser) savedPhotos = await getUserPhotos(currentUser.uid);
@@ -461,10 +494,22 @@ export default function PhotoBulkCropPage() {
             type: photo.type,
             year: photo.year || "",
             latestId: Number(photo.id || 0),
+            completeType: photo.completeType || "",
+            poseSetNames: [],
           });
         } else {
           const item = typeMap.get(key);
           item.latestId = Math.max(item.latestId, Number(photo.id || 0));
+          if (Number(photo.completeType || 0) > Number(item.completeType || 0)) {
+            item.completeType = photo.completeType || "";
+          }
+        }
+
+        const typeItem = typeMap.get(key);
+        const setName = getPoseSetName(photo.pose);
+
+        if (setName && !typeItem.poseSetNames.includes(setName)) {
+          typeItem.poseSetNames.push(setName);
         }
       }
     });
@@ -493,11 +538,20 @@ export default function PhotoBulkCropPage() {
       setMember(lastInput.member || "");
       setType(lastInput.type || "");
 
-      const lastTypeExists = sortedTypeOptions.some((item) => item.type === lastInput.type && item.year === lastInput.year);
-      setTypeSelect(lastTypeExists ? `${lastInput.year}__${lastInput.type}` : "__new__");
-      setCompleteType(lastInput.completeType && Number(lastInput.completeType) > 5 ? "custom" : lastInput.completeType || (selectedGroup === "乃木坂46" ? "3" : "4"));
+      const selectedType = sortedTypeOptions.find((item) => item.type === lastInput.type && item.year === lastInput.year);
+
+      if (selectedType) {
+        setTypeSelect(`${lastInput.year}__${lastInput.type}`);
+        applyCompleteTypeFromSelectedType(selectedType, defaultCompleteType);
+      } else {
+        setTypeSelect("__new__");
+        setCompleteType(defaultCompleteType);
+        setPoseSetNames([""]);
+      }
     } else {
       setTypeSelect("__new__");
+      setCompleteType(defaultCompleteType);
+      setPoseSetNames([""]);
     }
   };
 
@@ -507,10 +561,14 @@ export default function PhotoBulkCropPage() {
   };
 
   const handleTypeSelectChange = (value) => {
+    const defaultCompleteType = getDefaultCompleteType(group);
+
     setTypeSelect(value);
 
     if (value === "__new__") {
       setType("");
+      setCompleteType(defaultCompleteType);
+      setPoseSetNames([""]);
       return;
     }
 
@@ -519,6 +577,7 @@ export default function PhotoBulkCropPage() {
     if (selectedType) {
       setType(selectedType.type);
       if (selectedType.year) setYear(selectedType.year);
+      applyCompleteTypeFromSelectedType(selectedType, defaultCompleteType);
     }
   };
 
@@ -619,7 +678,6 @@ export default function PhotoBulkCropPage() {
 
     return item.image || "";
   };
-
   const makeZoomView = (rect) => {
     if (!imageSize.width || !imageSize.height) return null;
 
@@ -660,6 +718,7 @@ export default function PhotoBulkCropPage() {
       const xLines = [0, ...innerXLines, 100].sort((a, b) => a - b);
       const yLines = [0, ...innerYLines, 100].sort((a, b) => a - b);
       const results = [];
+
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const index = row * cols + col;
@@ -831,7 +890,7 @@ export default function PhotoBulkCropPage() {
     if (typeSelect === "__new__") {
       setTypeOptions((prev) => {
         const exists = prev.some((item) => item.type === finalType && item.year === year);
-        return exists ? prev : [{ type: finalType, year, latestId: Date.now() }, ...prev];
+        return exists ? prev : [{ type: finalType, year, latestId: Date.now(), completeType: actualCompleteType, poseSetNames: activePoseSetNames }, ...prev];
       });
       setTypeSelect(`${year}__${finalType}`);
       setType(finalType);
@@ -945,7 +1004,7 @@ export default function PhotoBulkCropPage() {
       localStorage.setItem("photos", JSON.stringify(localPhotos));
       localStorage.setItem(
         `lastPhotoInput_${group}`,
-        JSON.stringify({ year, generation, member: finalMember, type: finalType, completeType: actualCompleteType })
+        JSON.stringify({ year, generation, member: finalMember, type: finalType })
       );
 
       await saveUserPhotos(user.uid, firestorePhotos);
@@ -1160,7 +1219,7 @@ export default function PhotoBulkCropPage() {
                 <label className="block text-sm text-zinc-400 mb-2">種類</label>
                 <select value={typeSelect} onChange={(e) => handleTypeSelectChange(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3">
                   <option value="__new__">＋ 新しく入力</option>
-                  {typeOptions.map((item) => <option key={`${item.year}__${item.type}`} value={`${item.year}__${item.type}`}>{item.year ? `${item.year}年　` : ""}{item.type}</option>)}
+                  {typeOptions.map((item) => <option key={`${item.year}__${item.type}`} value={`${item.year}__${item.type}`}>{item.type}</option>)}
                 </select>
 
                 {typeSelect === "__new__" && <input type="text" value={type} onChange={(e) => setType(e.target.value)} placeholder="種類名を入力" className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mt-2" />}

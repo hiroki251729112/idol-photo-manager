@@ -25,8 +25,10 @@ export default function DetailEditTypePage() {
   const [group, setGroup] = useState("櫻坂46");
   const [photos, setPhotos] = useState([]);
 
-  const [targetTypeForRename, setTargetTypeForRename] = useState("");
+  const [targetTypeForNameChange, setTargetTypeForNameChange] = useState("");
   const [newTypeName, setNewTypeName] = useState("");
+
+  const [targetTypeForYearChange, setTargetTypeForYearChange] = useState("");
   const [newTypeYear, setNewTypeYear] = useState("2026");
 
   const [targetTypeForDelete, setTargetTypeForDelete] = useState("");
@@ -436,6 +438,24 @@ export default function DetailEditTypePage() {
     saveTypeOrder(nextOrder);
   };
 
+  const moveTypeToEdge = (key, direction) => {
+    const currentOrder = orderedTypeOptions.map((item) => item.key);
+    const index = currentOrder.indexOf(key);
+
+    if (index === -1) return;
+
+    const nextOrder = [...currentOrder];
+    const [movedItem] = nextOrder.splice(index, 1);
+
+    if (direction === "top") {
+      nextOrder.unshift(movedItem);
+    } else {
+      nextOrder.push(movedItem);
+    }
+
+    saveTypeOrder(nextOrder);
+  };
+
   const resetTypeOrder = () => {
     const confirmReset = window.confirm(
       "種類の並び順を「追加日（降順）」に戻しますか？"
@@ -447,18 +467,24 @@ export default function DetailEditTypePage() {
     saveTypeOrder(defaultOrder);
   };
 
-  const handleRenameType = async () => {
-    if (!targetTypeForRename) {
+  const changeTypeAndYear = async ({
+    targetKey,
+    nextTypeName,
+    nextYear,
+    successMessage,
+    afterSuccess,
+  }) => {
+    if (!targetKey) {
       alert("変更したい種類を選択してください");
       return;
     }
 
-    if (!newTypeName.trim()) {
+    if (!nextTypeName.trim()) {
       alert("新しい種類名を入力してください");
       return;
     }
 
-    if (!newTypeYear) {
+    if (!nextYear) {
       alert("新しい年を選択してください");
       return;
     }
@@ -468,34 +494,30 @@ export default function DetailEditTypePage() {
       return;
     }
 
-    const targetInfo = typeOptions.find(
-      (item) => item.key === targetTypeForRename
-    );
-    const { type: beforeTypeName, year: beforeYear } = parseTypeKey(
-      targetTypeForRename
-    );
+    const targetInfo = typeOptions.find((item) => item.key === targetKey);
+    const { type: beforeTypeName, year: beforeYear } = parseTypeKey(targetKey);
 
     if (!targetInfo || !beforeTypeName) {
       alert("変更対象の種類情報を確認できませんでした");
       return;
     }
 
-    const nextTypeName = normalizeText(newTypeName);
-    const nextYear = normalizeYear(newTypeYear);
-    const nextKey = getTypeKey(nextYear, nextTypeName);
+    const safeNextTypeName = normalizeText(nextTypeName);
+    const safeNextYear = normalizeYear(nextYear);
+    const nextKey = getTypeKey(safeNextYear, safeNextTypeName);
 
-    if (targetTypeForRename === nextKey) {
-      alert("変更前と同じ種類名・年です");
+    if (targetKey === nextKey) {
+      alert("変更前と同じ内容です");
       return;
     }
 
     const duplicateTypeExists = typeOptions.some(
-      (item) => item.key === nextKey && item.key !== targetTypeForRename
+      (item) => item.key === nextKey && item.key !== targetKey
     );
 
     const confirmText = duplicateTypeExists
-      ? `${beforeYear}年「${beforeTypeName}」を既存の ${nextYear}年「${nextTypeName}」に統合しますか？\n同じメンバー・ポーズがある場合はデータがまとまります。`
-      : `${beforeYear}年「${beforeTypeName}」を ${nextYear}年「${nextTypeName}」に一括変更しますか？`;
+      ? `${beforeYear}年「${beforeTypeName}」を既存の ${safeNextYear}年「${safeNextTypeName}」に統合しますか？\n同じメンバー・ポーズがある場合はデータがまとまります。`
+      : `${beforeYear}年「${beforeTypeName}」を ${safeNextYear}年「${safeNextTypeName}」に変更しますか？`;
 
     const confirmUpdate = window.confirm(confirmText);
 
@@ -504,7 +526,7 @@ export default function DetailEditTypePage() {
     try {
       setIsSaving(true);
 
-      const renameTargets = photos.filter(
+      const changeTargets = photos.filter(
         (photo) =>
           normalizeText(photo.group) === group &&
           normalizeText(photo.type) === beforeTypeName &&
@@ -514,9 +536,9 @@ export default function DetailEditTypePage() {
       await migrateImagesForTypeAndYearChange({
         oldType: beforeTypeName,
         oldYear: beforeYear,
-        nextType: nextTypeName,
-        nextYear,
-        targetPhotos: renameTargets,
+        nextType: safeNextTypeName,
+        nextYear: safeNextYear,
+        targetPhotos: changeTargets,
       });
 
       const updatedPhotos = photos.map((photo) => {
@@ -527,8 +549,8 @@ export default function DetailEditTypePage() {
         ) {
           return {
             ...photo,
-            year: nextYear,
-            type: nextTypeName,
+            year: safeNextYear,
+            type: safeNextTypeName,
             hasIndexedDbImage: Boolean(
               photo.hasIndexedDbImage || photo.hasLocalImage || photo.image
             ),
@@ -539,25 +561,66 @@ export default function DetailEditTypePage() {
       });
 
       const nextOrder = orderedTypeOptions
-        .map((item) => (item.key === targetTypeForRename ? nextKey : item.key))
+        .map((item) => (item.key === targetKey ? nextKey : item.key))
         .filter((key, index, array) => array.indexOf(key) === index);
 
       await saveTypeOrder(nextOrder);
       await savePhotos(updatedPhotos);
 
-      setTargetTypeForRename("");
-      setNewTypeName("");
-      setNewTypeYear("2026");
+      if (afterSuccess) afterSuccess();
 
-      alert("種類名・年を一括変更しました");
+      alert(successMessage);
     } catch (error) {
       console.error(error);
-      alert("種類名・年の変更に失敗しました。コンソールを確認してください。");
+      alert("変更に失敗しました。コンソールを確認してください。");
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleRenameTypeName = async () => {
+    const selectedInfo = typeOptions.find(
+      (item) => item.key === targetTypeForNameChange
+    );
+
+    if (!selectedInfo) {
+      alert("変更したい種類を選択してください");
+      return;
+    }
+
+    await changeTypeAndYear({
+      targetKey: targetTypeForNameChange,
+      nextTypeName: newTypeName,
+      nextYear: selectedInfo.year,
+      successMessage: "種類名を一括変更しました",
+      afterSuccess: () => {
+        setTargetTypeForNameChange("");
+        setNewTypeName("");
+      },
+    });
+  };
+
+  const handleChangeTypeYear = async () => {
+    const selectedInfo = typeOptions.find(
+      (item) => item.key === targetTypeForYearChange
+    );
+
+    if (!selectedInfo) {
+      alert("変更したい種類を選択してください");
+      return;
+    }
+
+    await changeTypeAndYear({
+      targetKey: targetTypeForYearChange,
+      nextTypeName: selectedInfo.type,
+      nextYear: newTypeYear,
+      successMessage: "年を一括変更しました",
+      afterSuccess: () => {
+        setTargetTypeForYearChange("");
+        setNewTypeYear("2026");
+      },
+    });
+  };
   const handleDeleteType = async () => {
     if (!targetTypeForDelete) {
       alert("削除したい種類を選択してください");
@@ -637,9 +700,13 @@ export default function DetailEditTypePage() {
     }
   };
 
-  const selectedRenameTypeInfo = useMemo(() => {
-    return typeOptions.find((item) => item.key === targetTypeForRename);
-  }, [typeOptions, targetTypeForRename]);
+  const selectedNameChangeTypeInfo = useMemo(() => {
+    return typeOptions.find((item) => item.key === targetTypeForNameChange);
+  }, [typeOptions, targetTypeForNameChange]);
+
+  const selectedYearChangeTypeInfo = useMemo(() => {
+    return typeOptions.find((item) => item.key === targetTypeForYearChange);
+  }, [typeOptions, targetTypeForYearChange]);
 
   const selectedDeleteTypeInfo = useMemo(() => {
     return typeOptions.find((item) => item.key === targetTypeForDelete);
@@ -658,7 +725,7 @@ export default function DetailEditTypePage() {
 
   return (
     <main className="min-h-screen bg-black text-white px-4 py-5">
-      <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl mx-auto">
+      <div className="w-full max-w-md md:max-w-3xl lg:max-w-5xl mx-auto">
         <Link
           href={`/detail-edit?group=${encodeURIComponent(group)}`}
           className="text-cyan-400 text-sm"
@@ -676,23 +743,22 @@ export default function DetailEditTypePage() {
 
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
-            <h2 className="text-xl font-bold mb-2">種類名・年を一括変更</h2>
+            <h2 className="text-xl font-bold mb-2">種類名を一括変更</h2>
 
             <p className="text-sm text-zinc-400 mb-4">
-              種類名や年を間違えて登録したときに、画像の紐づけも含めてまとめて変更します。
+              種類名だけを変更します。年はそのまま残ります。
             </p>
 
             <select
-              value={targetTypeForRename}
+              value={targetTypeForNameChange}
               onChange={(e) => {
                 const selectedKey = e.target.value;
                 const selectedItem = typeOptions.find(
                   (item) => item.key === selectedKey
                 );
 
-                setTargetTypeForRename(selectedKey);
+                setTargetTypeForNameChange(selectedKey);
                 setNewTypeName(selectedItem?.type || "");
-                setNewTypeYear(selectedItem?.year || "2026");
               }}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mb-3"
             >
@@ -713,6 +779,54 @@ export default function DetailEditTypePage() {
               className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mb-3"
             />
 
+            {selectedNameChangeTypeInfo && (
+              <p className="text-xs text-zinc-500 mb-3 leading-5">
+                対象：{selectedNameChangeTypeInfo.year}年{" "}
+                {selectedNameChangeTypeInfo.type} /{" "}
+                {selectedNameChangeTypeInfo.totalCount}枚 /{" "}
+                {selectedNameChangeTypeInfo.memberCount}人分
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleRenameTypeName}
+              disabled={isSaving}
+              className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
+            >
+              {isSaving ? "処理中..." : "種類名を変更する"}
+            </button>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-4">
+            <h2 className="text-xl font-bold mb-2">年を一括変更</h2>
+
+            <p className="text-sm text-zinc-400 mb-4">
+              登録した年だけを変更します。種類名はそのまま残ります。
+            </p>
+
+            <select
+              value={targetTypeForYearChange}
+              onChange={(e) => {
+                const selectedKey = e.target.value;
+                const selectedItem = typeOptions.find(
+                  (item) => item.key === selectedKey
+                );
+
+                setTargetTypeForYearChange(selectedKey);
+                setNewTypeYear(selectedItem?.year || "2026");
+              }}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl p-3 mb-3"
+            >
+              <option value="">種類を選択</option>
+
+              {orderedTypeOptions.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.year}年　{item.type}（{item.totalCount}枚 / {item.memberCount}人）
+                </option>
+              ))}
+            </select>
+
             <select
               value={newTypeYear}
               onChange={(e) => setNewTypeYear(e.target.value)}
@@ -727,26 +841,26 @@ export default function DetailEditTypePage() {
               )}
             </select>
 
-            {selectedRenameTypeInfo && (
+            {selectedYearChangeTypeInfo && (
               <p className="text-xs text-zinc-500 mb-3 leading-5">
-                対象：{selectedRenameTypeInfo.year}年{" "}
-                {selectedRenameTypeInfo.type} /{" "}
-                {selectedRenameTypeInfo.totalCount}枚 /{" "}
-                {selectedRenameTypeInfo.memberCount}人分
+                対象：{selectedYearChangeTypeInfo.year}年{" "}
+                {selectedYearChangeTypeInfo.type} /{" "}
+                {selectedYearChangeTypeInfo.totalCount}枚 /{" "}
+                {selectedYearChangeTypeInfo.memberCount}人分
               </p>
             )}
 
             <button
               type="button"
-              onClick={handleRenameType}
+              onClick={handleChangeTypeYear}
               disabled={isSaving}
               className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
             >
-              {isSaving ? "処理中..." : "種類名・年を変更する"}
+              {isSaving ? "処理中..." : "年を変更する"}
             </button>
           </div>
 
-          <div className="bg-zinc-900 border border-red-800 rounded-3xl p-4">
+          <div className="bg-zinc-900 border border-red-800 rounded-3xl p-4 lg:col-span-2">
             <h2 className="text-xl font-bold mb-2 text-red-400">
               種類を削除
             </h2>
@@ -833,42 +947,64 @@ export default function DetailEditTypePage() {
                       : "border-zinc-800"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="text-zinc-500 text-sm w-7 shrink-0 text-center">
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
+                    <div className="text-zinc-500 text-sm w-7 text-center pt-1">
                       {index + 1}
                     </div>
 
-                    <div className="text-zinc-500 text-xl cursor-grab active:cursor-grabbing select-none shrink-0">
-                      ☰
-                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold leading-tight break-words">
+                            {item.type}
+                          </p>
+                          <p className="text-xs text-zinc-400 mt-1">
+                            {item.year}年 ・ {item.totalCount}枚 ・ {item.memberCount}人
+                          </p>
+                        </div>
 
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold leading-tight break-words">
-                        {item.type}
-                      </p>
-                      <p className="text-xs text-zinc-400 mt-1">
-                        {item.year}年 ・ {item.totalCount}枚 ・ {item.memberCount}人
-                      </p>
-                    </div>
+                        <div className="text-zinc-500 text-xl cursor-grab active:cursor-grabbing select-none shrink-0 hidden sm:block">
+                          ☰
+                        </div>
+                      </div>
 
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => moveType(item.key, "up")}
-                        disabled={index === 0}
-                        className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 font-bold"
-                      >
-                        ↑
-                      </button>
+                      <div className="grid grid-cols-4 gap-2 mt-3">
+                        <button
+                          type="button"
+                          onClick={() => moveTypeToEdge(item.key, "top")}
+                          disabled={index === 0}
+                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-xs font-bold"
+                        >
+                          一番上
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => moveType(item.key, "down")}
-                        disabled={index === orderedTypeOptions.length - 1}
-                        className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 font-bold"
-                      >
-                        ↓
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => moveType(item.key, "up")}
+                          disabled={index === 0}
+                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-sm font-bold"
+                        >
+                          ↑
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => moveType(item.key, "down")}
+                          disabled={index === orderedTypeOptions.length - 1}
+                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-sm font-bold"
+                        >
+                          ↓
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => moveTypeToEdge(item.key, "bottom")}
+                          disabled={index === orderedTypeOptions.length - 1}
+                          className="h-10 rounded-xl bg-zinc-800 border border-zinc-700 disabled:text-zinc-600 text-zinc-100 text-xs font-bold"
+                        >
+                          一番下
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -877,7 +1013,7 @@ export default function DetailEditTypePage() {
           )}
 
           <p className="text-xs text-zinc-500 mt-4 leading-5">
-            ※スマホでドラッグしづらい場合は、右側の ↑ ↓ ボタンを使ってください。
+            ※スマホではドラッグよりも「一番上」「↑」「↓」「一番下」ボタンでの並び替えがおすすめです。
           </p>
         </div>
       </div>

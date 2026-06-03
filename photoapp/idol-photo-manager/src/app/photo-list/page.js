@@ -204,6 +204,7 @@ export default function PhotoListPage() {
 
     return chunks;
   };
+
   const getYearNumber = (value) => {
     const numberValue = Number(value || 0);
     return Number.isFinite(numberValue) ? numberValue : 0;
@@ -335,18 +336,26 @@ export default function PhotoListPage() {
     return `/photo-detail/${firstPhoto.id}?${params.toString()}`;
   };
 
-  const buildCustomCompleteRows = (item, photoMap, otherPhotos) => {
-    const completeCount = Number(item.completeType || 0);
-    const rowCount = Math.max(1, Math.ceil(completeCount / 4));
+  const getCustomPoseSetNames = (item) => {
     const existingSetNames = [];
 
     item.photos.forEach((photo) => {
       const setName = getPoseSetName(photo.pose);
-      if (setName && !existingSetNames.includes(setName)) existingSetNames.push(setName);
+      if (setName && !existingSetNames.includes(setName)) {
+        existingSetNames.push(setName);
+      }
     });
 
+    return existingSetNames;
+  };
+
+  const buildCustomCompleteRows = (item, photoMap, otherPhotos) => {
+    const completeCount = Number(item.completeType || 0);
+    const rowCount = Math.max(1, Math.ceil(completeCount / 4));
+    const existingSetNames = getCustomPoseSetNames(item);
+
     const rows = Array.from({ length: rowCount }, (_, rowIndex) => {
-      const setName = existingSetNames[rowIndex] || "";
+      const setName = existingSetNames[rowIndex] || existingSetNames[0] || "";
 
       return basePoseOrder.map((pose) => {
         const poseName = setName ? `${pose}（${setName}）` : pose;
@@ -398,6 +407,7 @@ export default function PhotoListPage() {
     if (Number(item.completeType || 0) > 5) {
       return buildCustomCompleteRows(item, photoMap, otherPhotos);
     }
+
     if (item.completeType === "3") {
       const firstRow = ["ヨリ", "チュウ", "ヒキ"].map((pose) => ({
         pose,
@@ -631,6 +641,7 @@ export default function PhotoListPage() {
             </div>
           </div>
         </div>
+
         {groupedItems.length === 0 ? (
           <p className="text-zinc-400">生写真が登録されていません。</p>
         ) : (

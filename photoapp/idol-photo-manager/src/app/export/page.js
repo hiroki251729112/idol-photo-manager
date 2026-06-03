@@ -12,17 +12,21 @@ export default function ExportPage() {
   const [exportMode, setExportMode] = useState("member");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [hasAutoCreated, setHasAutoCreated] = useState(false);
   const [message, setMessage] = useState("");
   const [previewImage, setPreviewImage] = useState("");
   const [previewBlob, setPreviewBlob] = useState(null);
 
+  const normalizeText = (value) => String(value || "").trim();
+  const normalizeYear = (value) => String(value || "").trim();
+
   const getPhotoKey = (photo) => {
     return [
-      photo.group || "",
-      photo.year || "",
-      photo.member || "",
-      photo.type || "",
-      photo.pose || "",
+      normalizeText(photo.group),
+      normalizeYear(photo.year),
+      normalizeText(photo.member),
+      normalizeText(photo.type),
+      normalizeText(photo.pose),
     ].join("__");
   };
 
@@ -81,7 +85,7 @@ export default function ExportPage() {
   const filteredPhotos = useMemo(() => {
     const activePhotos = photos.filter((photo) => Number(photo.count || 0) > 0);
     if (!group) return activePhotos;
-    return activePhotos.filter((photo) => photo.group === group);
+    return activePhotos.filter((photo) => normalizeText(photo.group) === group);
   }, [photos, group]);
 
   const totalCount = useMemo(() => {
@@ -95,24 +99,23 @@ export default function ExportPage() {
     return ["ヨリ", "チュウ", "座りヨリ", "ヒキ", "座り", "その他"];
   }, []);
 
-  const getPoseSortIndex = (pose) => {
-    const index = poseOrder.indexOf(pose);
-    if (index !== -1) return index;
-    return poseOrder.length;
+  const getPoseBase = (pose) => {
+    const match = String(pose || "").match(/^(.+?)（(.+)）$/);
+    return match ? match[1] : pose;
   };
 
-  const getGenerationSortValue = (generation) => {
-    if (!generation) return 9999;
+  const getPoseSetName = (pose) => {
+    const match = String(pose || "").match(/^(.+?)（(.+)）$/);
+    return match ? match[2] : "";
+  };
 
-    const graduateMatch = generation.match(/卒業生（(\d+)期生）/);
-    if (graduateMatch) return 100 + Number(graduateMatch[1]);
+  const getPoseSortIndex = (pose) => {
+    const basePose = getPoseBase(pose);
+    const setName = getPoseSetName(pose);
+    const baseIndex = poseOrder.indexOf(basePose);
+    const safeBaseIndex = baseIndex !== -1 ? baseIndex : poseOrder.length;
 
-    const normalMatch = generation.match(/(\d+)期生/);
-    if (normalMatch) return Number(normalMatch[1]);
-
-    if (generation === "卒業生") return 199;
-
-    return 9999;
+    return `${setName || "000"}-${String(safeBaseIndex).padStart(2, "0")}-${pose}`;
   };
 
   const getPoseText = (photo) => {
@@ -125,17 +128,27 @@ export default function ExportPage() {
 
     filteredPhotos.forEach((photo) => {
       const mainKey =
-        exportMode === "member" ? photo.member : `${photo.type}-${photo.year}`;
-      const mainTitle = exportMode === "member" ? photo.member : photo.type;
-      const subKey = exportMode === "member" ? photo.type : photo.member;
+        exportMode === "member"
+          ? normalizeText(photo.member)
+          : `${normalizeYear(photo.year)}__${normalizeText(photo.type)}`;
+
+      const mainTitle =
+        exportMode === "member"
+          ? normalizeText(photo.member)
+          : normalizeText(photo.type);
+
+      const subKey =
+        exportMode === "member"
+          ? normalizeText(photo.type)
+          : normalizeText(photo.member);
 
       if (!mainKey || !subKey) return;
 
       if (!mainMap.has(mainKey)) {
         mainMap.set(mainKey, {
           title: mainTitle,
-          generation: photo.generation || "",
-          year: photo.year || "",
+          memberKana: normalizeText(photo.memberKana),
+          year: normalizeYear(photo.year),
           latestId: Number(photo.id || 0),
           rows: new Map(),
         });
@@ -144,8 +157,8 @@ export default function ExportPage() {
       const mainItem = mainMap.get(mainKey);
       mainItem.latestId = Math.max(mainItem.latestId, Number(photo.id || 0));
 
-      if (!mainItem.generation && photo.generation) {
-        mainItem.generation = photo.generation;
+      if (!mainItem.memberKana && photo.memberKana) {
+        mainItem.memberKana = normalizeText(photo.memberKana);
       }
 
       if (!mainItem.rows.has(subKey)) {
@@ -153,37 +166,34 @@ export default function ExportPage() {
       }
 
       mainItem.rows.get(subKey).push({
-        pose: photo.pose,
+        pose: normalizeText(photo.pose),
         text: getPoseText(photo),
       });
     });
 
     const items = [...mainMap.values()].map((item) => ({
       ...item,
-      rows: [...item.rows.entries()].map(([label, poses]) => ({
-        label,
-        poses: poses
-          .sort((a, b) => getPoseSortIndex(a.pose) - getPoseSortIndex(b.pose))
-          .map((poseItem) => poseItem.text)
-          .join(" / "),
-      })),
+      rows: [...item.rows.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], "ja"))
+        .map(([label, poses]) => ({
+          label,
+          poses: poses
+            .sort((a, b) => getPoseSortIndex(a.pose).localeCompare(getPoseSortIndex(b.pose), "ja"))
+            .map((poseItem) => poseItem.text)
+            .join(" / "),
+        })),
     }));
 
     if (exportMode === "member") {
-      return items.sort((a, b) => {
-        const generationDiff =
-          getGenerationSortValue(a.generation) - getGenerationSortValue(b.generation);
-
-        if (generationDiff !== 0) return generationDiff;
-
-        return a.title.localeCompare(b.title, "ja");
-      });
+      return items.sort((a, b) =>
+        (a.memberKana || a.title).localeCompare(b.memberKana || b.title, "ja")
+      );
     }
 
     return items.sort((a, b) => {
       const yearDiff = Number(b.year || 0) - Number(a.year || 0);
       if (yearDiff !== 0) return yearDiff;
-      return Number(b.latestId || 0) - Number(a.latestId || 0);
+      return a.title.localeCompare(b.title, "ja");
     });
   }, [filteredPhotos, exportMode, poseOrder]);
 
@@ -255,23 +265,21 @@ export default function ExportPage() {
   const distributeBlocks = (blocks, columns, headerHeight) => {
     const columnHeights = Array(columns).fill(headerHeight);
     const placements = [];
+    const itemsPerColumn = Math.ceil(blocks.length / columns);
 
-    blocks.forEach((block) => {
-      let shortestIndex = 0;
-
-      for (let i = 1; i < columnHeights.length; i += 1) {
-        if (columnHeights[i] < columnHeights[shortestIndex]) {
-          shortestIndex = i;
-        }
-      }
+    blocks.forEach((block, index) => {
+      const columnIndex = Math.min(
+        columns - 1,
+        Math.floor(index / itemsPerColumn)
+      );
 
       placements.push({
         ...block,
-        columnIndex: shortestIndex,
-        y: columnHeights[shortestIndex],
+        columnIndex,
+        y: columnHeights[columnIndex],
       });
 
-      columnHeights[shortestIndex] += block.height;
+      columnHeights[columnIndex] += block.height;
     });
 
     return {
@@ -307,8 +315,8 @@ export default function ExportPage() {
       if (aspectRatio > 2.1) score += (aspectRatio - 2.1) * 900;
       if (aspectRatio < 0.55) score += (0.55 - aspectRatio) * 900;
 
-      score += heightDifference * 0.35;
-      score += columns * 55;
+      score += heightDifference * 0.45;
+      score += columns * 40;
 
       if (items.length <= 2 && columns > 1) score += 950;
       if (items.length <= 4 && columns > 2) score += 700;
@@ -412,16 +420,46 @@ export default function ExportPage() {
     return { image, blob };
   };
 
+  useEffect(() => {
+    const createInitialImage = async () => {
+      if (isLoading || hasAutoCreated) return;
+
+      try {
+        setHasAutoCreated(true);
+        setIsCreating(true);
+        setMessage("保存用画像を作成しています...");
+
+        await createImage();
+
+        setMessage("");
+      } catch (error) {
+        console.error(error);
+        setMessage("画像の作成に失敗しました。もう一度開き直してください。");
+      } finally {
+        setIsCreating(false);
+      }
+    };
+
+    createInitialImage();
+  }, [isLoading, hasAutoCreated, exportItems]);
+
   const handleSaveImage = async () => {
     if (isCreating) return;
 
     try {
       setIsCreating(true);
-      setMessage("保存用画像を作成しています...");
+      setMessage("共有画面を開く準備をしています...");
 
-      const result = await createImage();
+      let image = previewImage;
+      let blob = previewBlob;
 
-      if (!result?.blob || !result?.image) {
+      if (!image || !blob) {
+        const result = await createImage();
+        image = result.image;
+        blob = result.blob;
+      }
+
+      if (!blob || !image) {
         setMessage("画像を準備できませんでした。");
         return;
       }
@@ -429,7 +467,7 @@ export default function ExportPage() {
       const fileName = `${group || "collection"}-${exportMode}-list.png`;
 
       if (navigator.share && navigator.canShare) {
-        const file = new File([result.blob], fileName, { type: "image/png" });
+        const file = new File([blob], fileName, { type: "image/png" });
 
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({
@@ -437,17 +475,18 @@ export default function ExportPage() {
             title: "生写真 所持リスト",
             text: "作成した一覧画像です。",
           });
-          setMessage("画像の保存操作が完了しました。共有先で保存できているか確認してください。");
+          setMessage("共有画面を開きました。保存先で保存できているか確認してください。");
           return;
         }
       }
 
       const link = document.createElement("a");
-      link.href = result.image;
+      link.href = image;
       link.download = fileName;
       document.body.appendChild(link);
       link.click();
       link.remove();
+
       setMessage("画像の保存を開始しました。保存できない場合は、下の画像を長押し保存してください。");
     } catch (error) {
       if (error?.name === "AbortError") {
@@ -492,57 +531,30 @@ export default function ExportPage() {
           <button
             type="button"
             onClick={handleSaveImage}
-            disabled={isCreating}
+            disabled={isCreating || !previewImage}
             className="w-full bg-cyan-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-black rounded-2xl py-3 font-bold active:scale-[0.98] transition"
           >
             {isCreating ? "作成・保存中..." : "画像を保存"}
           </button>
         </div>
 
-        <p className="text-xs text-zinc-500 leading-5 mb-4">
-          ボタンを押すと一覧画像を作成し、保存画面を開きます。
-        </p>
-
         {message && <p className="text-sm text-zinc-400 leading-6 mb-4">{message}</p>}
 
-        {previewImage && (
-          <div className="bg-zinc-900 border border-cyan-500 rounded-3xl p-3 mb-6">
-            <p className="text-sm font-bold mb-2">作成した画像</p>
-            <p className="text-xs text-zinc-400 leading-5 mb-3">
-              保存できない場合は、この画像を長押しして保存してください。
-            </p>
-
-            <img src={previewImage} alt="保存用画像" className="w-full rounded-2xl bg-white" />
-          </div>
-        )}
-
-        <div className="bg-white text-black p-5 rounded-2xl">
-          <h2 className="text-2xl font-bold mb-1">
-            {group} 生写真 所持リスト
-          </h2>
-
-          <p className="text-sm text-gray-500 mb-5">
-            {exportMode === "member" ? "メンバー別" : "種類別"}・合計 {totalCount}枚
+        <div className="bg-zinc-900 border border-cyan-500 rounded-3xl p-3 mb-6">
+          <p className="text-sm font-bold mb-2">作成した画像</p>
+          <p className="text-xs text-zinc-400 leading-5 mb-3">
+            ボタンで保存できない場合は、この画像を長押しして保存してください。
           </p>
 
-          {exportItems.length === 0 ? (
-            <p className="text-sm text-gray-500">生写真が登録されていません。</p>
+          {previewImage ? (
+            <img
+              src={previewImage}
+              alt="保存用画像"
+              className="w-full rounded-2xl bg-white"
+            />
           ) : (
-            <div className="grid gap-5">
-              {exportItems.map((item, index) => (
-                <div key={index} className="border border-gray-300 rounded-2xl p-4">
-                  <p className="font-bold text-lg mb-3 break-words">{item.title}</p>
-
-                  <div className="grid gap-2">
-                    {item.rows.map((row, rowIndex) => (
-                      <div key={rowIndex} className="text-sm leading-6 break-words text-gray-700">
-                        <span className="font-bold">{row.label}</span>
-                        <span>　[{row.poses}]</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+            <div className="w-full aspect-[3/4] rounded-2xl bg-zinc-800 flex items-center justify-center text-zinc-500 text-sm">
+              保存用画像を作成しています...
             </div>
           )}
         </div>
